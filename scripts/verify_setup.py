@@ -106,7 +106,7 @@ def check_env() -> tuple[str, str]:
 
 
 def check_project_structure() -> None:
-    required = ["src", "tests", "docs", "data", "requirements.txt", ".env.example"]
+    required = ["src", "tests", "docs", "data", "requirements.txt", ".env"]
     missing = [p for p in required if not Path(p).exists()]
     if missing:
         fail(
