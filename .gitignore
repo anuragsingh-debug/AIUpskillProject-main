@@ -1,3 +1,9 @@
+# Claude Code local agent files (memory, local settings) — not for the repo
+.claude/
+
+# Generated article output (created at runtime by the fetchers)
+data/articles/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
