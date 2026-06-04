@@ -5,7 +5,7 @@ import aiohttp
 from typing import List
 from src.models.article import Article
 from src.fetchers.base_fetcher import BaseFetcher
-from src.utils.rate_limiter import RateLimiter
+from src.strategies.rate_limit_strategy import RateLimitStrategy, SemaphoreStrategy
 
 
 class HackerNewsFetcher(BaseFetcher):
@@ -21,12 +21,14 @@ class HackerNewsFetcher(BaseFetcher):
 
     BASE_URL = "https://hacker-news.firebaseio.com/v0"
 
-    def __init__(self, transformer, storage, limit: int = 30):
+    def __init__(self, transformer, storage, limit: int = 30,
+                 rate_limiter: RateLimitStrategy = None):
         # Parent keeps the transformer ("chef") and storage ("cashier").
         super().__init__(transformer, storage)
         self.limit = limit
-        # Cap concurrent item requests so we don't hammer the API.
-        self.rate_limiter = RateLimiter(max_concurrent=10)
+        # Rate-limiting algorithm is injectable (Strategy pattern). Default caps
+        # concurrent item requests at 10 so we don't hammer the API.
+        self.rate_limiter = rate_limiter or SemaphoreStrategy(max_concurrent=10)
 
     def get_source_name(self) -> str:
         """Return the source name (used for the output filename)."""
