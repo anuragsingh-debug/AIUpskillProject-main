@@ -3,13 +3,14 @@ from typing import List
 from pathlib import Path
 from datetime import datetime
 from src.models.article import Article
+from src.storage.base_storage import ArticleStorage
 
-
-class MarkdownStorage:
+class MarkdownStorage(ArticleStorage):
     """
     Saves articles to markdown files.
-    
+
     Single Responsibility: File storage only.
+    Implements the ArticleStorage interface (Dependency Inversion).
     """
     
     def __init__(self, base_path: str = "data/articles"):

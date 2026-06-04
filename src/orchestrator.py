@@ -3,30 +3,28 @@
 import asyncio
 from typing import List
 from src.models.article import Article
-from src.fetchers.hackernews_fetcher import HackerNewsFetcher
-from src.fetchers.rss_fetcher import RSSFetcher
-from src.fetchers.github_trending_fetcher import GitHubTrendingFetcher
+from src.fetchers.base_fetcher import BaseFetcher
+from src.storage.base_storage import ArticleStorage
 
 
 class FetchOrchestrator:
     """
     Orchestrates fetching from multiple sources.
 
-    Dependencies (transformer, storage) are INJECTED via the constructor
-    (Dependency Inversion) — the orchestrator no longer builds them itself.
+    Everything is INJECTED via the constructor (Dependency Inversion):
+    - fetchers: a list of any BaseFetcher (abstraction, not concrete classes)
+    - transformer / storage: shared dependencies
+
+    The orchestrator no longer knows which concrete fetchers exist — that
+    decision lives in the composition root (main.py). This lets tests inject
+    mock fetchers instead of hitting the live network.
     """
 
-    def __init__(self, transformer, storage):
-        # Injected dependencies, shared by every fetcher.
+    def __init__(self, fetchers: List[BaseFetcher], transformer, storage: ArticleStorage):
+        # All dependencies injected from outside — nothing built in here.
+        self.fetchers = fetchers
         self.transformer = transformer
         self.storage = storage
-
-        # Build the list of fetchers. Adding a new source = one line here.
-        self.fetchers = [
-            HackerNewsFetcher(transformer, storage),
-            RSSFetcher("https://hnrss.org/frontpage", transformer, storage),
-            GitHubTrendingFetcher(transformer, storage),
-        ]
 
     async def fetch_all(self) -> List[Article]:
         """Fetch from all sources concurrently and save the combined result."""
@@ -60,8 +58,19 @@ class FetchOrchestrator:
 async def main():
     from src.transformers.article_transformer import ArticleTransformer
     from src.storage.markdown_storage import MarkdownStorage
+    from src.fetchers.hackernews_fetcher import HackerNewsFetcher
+    from src.fetchers.rss_fetcher import RSSFetcher
+    from src.fetchers.github_trending_fetcher import GitHubTrendingFetcher
 
-    orchestrator = FetchOrchestrator(ArticleTransformer(), MarkdownStorage())
+    transformer = ArticleTransformer()
+    storage = MarkdownStorage()
+    fetchers = [
+        HackerNewsFetcher(transformer, storage),
+        RSSFetcher("https://hnrss.org/frontpage", transformer, storage),
+        GitHubTrendingFetcher(transformer, storage),
+    ]
+
+    orchestrator = FetchOrchestrator(fetchers, transformer, storage)
     articles = await orchestrator.fetch_all()
 
     print("\nSample articles:")
