@@ -4,8 +4,8 @@
 AI news pipeline, the strategy used to overcome each, and the outcome. Every item below is grounded
 in actual code in this repo — not generic theory.
 
-**Scope so far:** Milestone 0 (Setup) → Milestone 1 (Async Fetcher) → Milestone 2 (SOLID Refactor).
-Milestone 3 (First Agent) is the next phase.
+**Scope so far:** Milestone 0 (Setup) → Milestone 1 (Async Fetcher) → Milestone 2 (SOLID Refactor) →
+Milestone 3 (First Agent — *in progress*, Evening 11 done: LiteLLM verified + `BaseAgent` built).
 
 ---
 
@@ -16,6 +16,7 @@ Milestone 3 (First Agent) is the next phase.
 | M0 | Setup & tooling | Provider lock-in + secret handling | LiteLLM model-string + `.env` + `verify_setup.py` |
 | M1 | Async fetcher | Slow sequential API calls; risk of being blocked | `asyncio.gather` concurrency + semaphore rate limiting |
 | M2 | SOLID + patterns | Code that couldn't grow without breaking | Abstractions (ABCs) + dependency injection + tests as guardrails |
+| M3 *(in progress)* | First AI agent | Wiring an LLM in cleanly + Windows/runtime gotchas | LiteLLM `completion()` + `BaseAgent` (Template Method) + UTF-8 console fix |
 
 **Headline results:** 3 live sources (HackerNews + RSS + GitHub Trending), **27 tests passing**,
 `ruff` clean, **77% coverage**. Two "zero-edit" extensions prove the design (GitHub source = OCP,
@@ -121,6 +122,51 @@ Each entry follows the same shape so it lifts straight into a report:
   PRs via the GitHub compare URL until `gh` is available.
 - *Outcome:* reproducible local runs regardless of global Python state.
 
+### Category E — First AI agent (Milestone 3, in progress)
+
+**E1. Connecting to an LLM without locking into one provider.**
+- *Why it mattered:* hard-coding a vendor SDK means rewriting code to switch models later.
+- *Strategy:* LiteLLM's single `completion(model=..., messages=[...])` call; the model is read from
+  `LITELLM_MODEL` in `.env` (currently `gemini/gemini-2.5-flash-lite`). Swapping providers = editing
+  one env line. A throwaway `scripts/test_llm.py` proved the connection end-to-end before any agent
+  code was written.
+- *Outcome:* provider-agnostic LLM access confirmed working against Gemini.
+
+**E2. Windows console crashed on emoji in LLM replies.**  *(the standout lesson of the day)*
+- *Why it mattered:* the LLM call **succeeded**, but `print()` of the reply threw
+  `UnicodeEncodeError` — Windows terminals default to the `cp1252` codec, which can't encode emoji
+  (`😊`, and our own `🤖`/`✅` status prints). A working feature looked broken.
+- *Strategy:* `sys.stdout.reconfigure(encoding="utf-8")`, baked into `BaseAgent` so every agent
+  inherits safe printing.
+- *Outcome:* no more encoding crashes; the fix lives in one place. **Key insight: distinguish "the
+  LLM failed" from "printing the result failed" — they look identical in a traceback.**
+
+**E3. "Tutorial code" had a wrong import.**
+- *Why it mattered:* a copied snippet had `from litellm import LitelLM` — a name that doesn't exist —
+  which also left `completion` undefined. (Same lesson as M2's C1: never trust copied code.)
+- *Strategy:* run it; the `ImportError` was immediate. Fixed to `from litellm import completion`.
+- *Outcome:* reinforced the "run + lint everything" discipline.
+
+**E4. Running a script directly vs. as a module (import paths).**
+- *Why it mattered:* `python tests/test_base_agent.py` failed with `ModuleNotFoundError: src` — a
+  directly-run script only puts its own folder on the import path, so `from src...` isn't found.
+- *Strategy:* run from the project root as a module: `./venv/Scripts/python.exe -m tests.test_base_agent`.
+  The `-m` form puts the root on `sys.path`.
+- *Outcome:* reliable way to run any in-repo script that imports `src`.
+
+**E5. A scratch test that runs at import would poison the test suite.**
+- *Why it mattered:* the quick `TestAgent` smoke file calls `asyncio.run(...)` at module level — if
+  committed, `pytest` would fire a **live LLM call during test collection** and could hang/fail CI.
+- *Strategy:* keep smoke scripts untracked; write proper *mocked* agent tests later (Evening 14).
+- *Outcome:* the agent deliverable (`base_agent.py`) is committed; the scratch scripts are not.
+
+### Design pattern reused in M3
+
+**Template Method — `BaseAgent.execute()`.** Same pattern as M2's `BaseFetcher`: the base class owns
+the fixed workflow (**load → process → save**); subclasses implement only the three varying steps
+(`_load_context`, `_process`, `_save_result`). Proves the SOLID groundwork from M2 pays off directly
+in M3 — the agent layer didn't have to reinvent structure.
+
 ---
 
 ## 3. Condensed table (good for a single slide)
@@ -139,6 +185,11 @@ Each entry follows the same shape so it lifts straight into a report:
 | C3 | Refactor dropped concurrency | Behaviour-guarding tests | Regression safety |
 | D1 | `datetime` not JSON-safe | `json.dump(default=str)` | Serialization |
 | D2 | Flaky timing test | Assert correctness, not wall-clock | Test design |
+| E1 | Don't lock into one LLM vendor | LiteLLM `completion()` + `.env` model | Provider-agnostic |
+| E2 | Windows crash on emoji in replies | `sys.stdout.reconfigure(utf-8)` in BaseAgent | Encoding |
+| E3 | Copied import name was wrong | Run it; fix `import completion` | Code hygiene |
+| E4 | `from src...` fails in a script | Run as module: `python -m ...` from root | Import paths |
+| E5 | Scratch test runs at import | Keep untracked; mock real tests later | Test design |
 
 ---
 
@@ -156,6 +207,12 @@ Use these as slide bullets or narration:
    the discipline mattered more than the code.
 5. **"We document our open issues."** The flaky timing test is named, explained, and has a fix plan —
    honesty over a green-but-misleading dashboard.
+6. **"The M2 design paid off immediately in M3."** The AI agent layer reused the exact Template
+   Method pattern from the fetchers — `BaseAgent` owns the workflow, agents fill in the steps. Clean
+   architecture wasn't busywork; it made adding AI straightforward.
+7. **"A traceback isn't always what it looks like."** Our first agent run 'failed' on Windows — but
+   the LLM call had actually succeeded; only *printing* the emoji reply crashed (`cp1252`). Reading
+   the traceback carefully (not just the last line) is a real debugging skill.
 
 ---
 
