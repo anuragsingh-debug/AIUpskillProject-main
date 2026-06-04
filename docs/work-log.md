@@ -78,13 +78,51 @@ branch pushed. **Remaining M2 loose end:** open the PR —
 
 ---
 
-## Milestone 3 — First Agent with Tools  (not started)
+## Milestone 3 — First Agent with Tools  (in progress, started 2026-06-04)
+
+Branch: `feature/milestone-3-agent` (branched off the M2 tip so it has the SOLID code M3 builds on).
 
 Planned (per `docs/milestones/milestone-3-first-agent.md`): LiteLLM smoke test, `BaseAgent`
 (Template Method), `NewsFilterAgent` (relevance filtering via LLM), tool use (calculator + web
 search), end-to-end fetch→filter pipeline, tests, PR.
 
-_Append actions here as M3 proceeds._
+### Evening 11, Step 1 — LiteLLM smoke test  (2026-06-04) ✅
+
+Wrote a throwaway `scripts/test_llm.py` that calls `completion()` once to prove LiteLLM →
+Gemini works end-to-end. Hit and fixed three issues:
+
+1. **Wrong import** — `from litellm import LitelLM` (doesn't exist) → crashed with `ImportError`,
+   and also left `completion` undefined. Fixed to `from litellm import completion`.
+2. **Windows encoding crash** — the LLM call *succeeded*, but `print()` of the reply (which
+   contained an emoji) crashed with `UnicodeEncodeError` because Windows terminals default to
+   `cp1252`. Fixed by `sys.stdout.reconfigure(encoding="utf-8")`. **Takeaway:** the real agent
+   code will need this too, since it prints LLM output constantly on Windows.
+3. **Harmless noise** — litellm 1.55.0 emits `Pydantic serializer warnings`; cosmetic, ignored.
+
+Result: prints `Hello! 👋` + `✅ LiteLLM working!`. LLM connection confirmed; the Gemini key is
+valid. (`scripts/test_llm.py` is scratch, not a graded deliverable.)
+
+### Evening 11, Step 2 — `BaseAgent` (Template Method)  (2026-06-04) ✅
+
+Wrote `src/agents/base_agent.py`: an abstract base (`ABC`) where `execute()` owns the fixed
+workflow (load → process → save) and subclasses implement the three `@abstractmethod` steps
+(`_load_context`, `_process`, `_save_result`). A shared `_call_llm()` wraps `completion()` so no
+agent re-writes LLM plumbing. Same Template Method idea as `BaseFetcher` from M2.
+
+Verified with a throwaway `TestAgent` (in scratch `tests/test_base_agent.py`): ran
+load → real LLM call → save end-to-end. Two gotchas hit:
+- **Run command:** `python test_base_agent.py` fails (file is in `tests/`, and a directly-run
+  script can't resolve `from src...`). Correct: `./venv/Scripts/python.exe -m tests.test_base_agent`
+  from the root (the `-m` form puts the root on the import path).
+- **Emoji crash again:** `base_agent.py` prints `🤖`/`✅`, so it needed the same
+  `sys.stdout.reconfigure(encoding="utf-8")` fix — now baked into the base class, so every agent
+  inherits safe printing.
+
+Committed `base_agent.py` only; the scratch smoke scripts (`scripts/test_llm.py`,
+`tests/test_base_agent.py`) are intentionally **not** committed — `test_base_agent.py` runs
+`asyncio.run(...)` at import, which would trigger a live LLM call during pytest collection.
+
+_Next: Evening 12 — `NewsFilterAgent` (read articles, judge AI-relevance via LLM)._
 
 ---
 
