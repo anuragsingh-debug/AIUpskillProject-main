@@ -112,7 +112,7 @@ an injectable `rate_limiter` (defaults to `SemaphoreStrategy(10)`); GitHub delib
 | Add a new source | edit existing code | 1 new file, 0 edits (GitHub proof) |
 | Swap storage backend | rewrite call sites | 1 line (JSONStorage proof) |
 | Orchestrator tests | live network, flaky | mocked, offline, deterministic |
-| Tests | — | 23 passing, ruff clean |
+| Tests | — | 27 passing, ruff clean |
 
 ---
 
@@ -140,5 +140,5 @@ an injectable `rate_limiter` (defaults to `SemaphoreStrategy(10)`); GitHub delib
 
 ---
 
-*Milestone 2 — all 5 SOLID principles and 3 design patterns applied. 23 tests pass, ruff clean,
+*Milestone 2 — all 5 SOLID principles and 3 design patterns applied. 27 tests pass, ruff clean,
 app fetches from 3 sources.*
