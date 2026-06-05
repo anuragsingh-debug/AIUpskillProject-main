@@ -5,7 +5,9 @@ AI news pipeline, the strategy used to overcome each, and the outcome. Every ite
 in actual code in this repo — not generic theory.
 
 **Scope so far:** Milestone 0 (Setup) → Milestone 1 (Async Fetcher) → Milestone 2 (SOLID Refactor) →
-Milestone 3 (First Agent — *in progress*, Evening 11 done: LiteLLM verified + `BaseAgent` built).
+Milestone 3 (First Agent — *in progress*, Evening 11: LiteLLM verified + `BaseAgent` built;
+Evening 12: `NewsFilterAgent` runs end-to-end; Evening 13: tools wired + autonomous tool call;
+Evening 14: mocked tests + fetch→filter pipeline).
 
 ---
 
@@ -160,6 +162,69 @@ Each entry follows the same shape so it lifts straight into a report:
 - *Strategy:* keep smoke scripts untracked; write proper *mocked* agent tests later (Evening 14).
 - *Outcome:* the agent deliverable (`base_agent.py`) is committed; the scratch scripts are not.
 
+**E6. Free-tier rate limit silently corrupted the agent's output.**  *(the standout lesson of M3 so far)*
+- *Why it mattered:* the first full `NewsFilterAgent` run reported "7/43 relevant" and looked
+  successful — but **32 of 43** articles had actually hit Gemini's free-tier limit (**10 requests/
+  minute**; we fired 43 in a row). Each 429 (`RESOURCE_EXHAUSTED`) was caught by the `_judge_relevance`
+  try/except and returned as `{"relevant": false, "relevance_score": 0}`. So **rate-limit failures
+  masqueraded as editorial rejections** — only ~11 articles got a genuine LLM judgment, and good AI
+  articles were thrown away for a traffic reason, not a content reason. The program "worked" while
+  the data was wrong — the most dangerous kind of bug.
+- *Strategy:* reuse the rate-limiting infrastructure already built in M1/M2
+  (`src/utils/rate_limiter.py`, and `SemaphoreStrategy` / `TokenBucketStrategy` in
+  `src/strategies/rate_limit_strategy.py`) to **space calls under 10/min** before they leave the
+  agent — the same "ATM guard" idea that protects the fetchers, now protecting the LLM caller.
+- *Outcome:* (in progress) M3 reuses the M1/M2 rate limiter directly — a second proof that the
+  earlier groundwork pays forward. **Key insight: a single `relevance_threshold` filter is only as
+  trustworthy as the calls behind it; throttle *before* you hit the wall, don't absorb 429s after.**
+
+**E7. A swallowed error was indistinguishable from a real negative.**
+- *Why it mattered:* the `except` fallback in `_judge_relevance` returned the *same shape* as a
+  genuine "not relevant" verdict (`relevant: false, score: 0`). Downstream counting then treated a
+  failed call exactly like an editorial "no" — the failure was invisible in the result.
+- *Strategy:* distinguish *failure* from *judgment* — mark errored articles as `error`/`unknown` and
+  exclude them from the kept/binned tally (or retry), so an outage can never inflate the "rejected"
+  count. (Same family as E2's lesson: "the LLM failed" ≠ "the result is negative".)
+- *Outcome:* (planned with E6) honest accounting — the filter rate reflects real judgments only.
+
+**E8. Four copy-paste bugs while wiring tools into the agent (Evening 13).**
+- *Why it mattered:* tutorial snippets for the tools / `EnhancedFilterAgent` / its test carried real
+  defects that each blocked the run. (Same recurring theme as M2's C1 and M3's E3 — never trust
+  copied code.)
+- *Strategy:* run early, read the actual error. Caught and fixed: (1) missing `import json` +
+  `from typing import Dict` → `NameError` at *import*; (2) an `if __name__ == "__main__"` block
+  indented *inside* the test function → the file ran but did nothing; (3) a wrong input path; and
+  (4) the most instructive — `EnhancedFilterAgent` → `NewsFilterAgent` → `BaseAgent` is a 3-level
+  chain, and the **middle class didn't forward the new `tools=` argument**, so `super().__init__(
+  tools=...)` raised `TypeError`. Fixed by giving `NewsFilterAgent.__init__` a `tools=None` param it
+  passes up.
+- *Outcome:* tools work; the LLM **autonomously called `web_search`** mid-judgment to verify a claim.
+  **Key insight: when you add an argument to a base class, every class *in between* must forward it.**
+
+**E9. The free tier has TWO stacked limits — per-minute AND per-day.**  *(updates E6)*
+- *Why it mattered:* after fixing the per-minute burst, a 5-article pipeline run *still* failed on
+  articles 2–5 — the error had changed to `GenerateRequestsPerDayPerProjectPerModel-FreeTier,
+  limit: 20`. We had exhausted the **daily** 20-request cap across the day's test runs.
+- *Strategy:* recognise that a rate limiter (spacing requests) solves only the **per-minute** (10)
+  cap; the **per-day** (20) cap can't be coded around — it needs waiting for reset (~midnight PT),
+  a paid tier, or a different model. Plan dev around mocked tests so progress never depends on quota.
+- *Outcome:* the pipeline *code* is proven (fetch → filter → save ran end-to-end); only the live
+  filter demo waits on quota. **Key insight: "rate limited" can mean two different walls — always
+  read which quota id the 429 names.**
+
+**E10. Scratch smoke scripts poisoned the whole `pytest` run; mocking fixed dev-time fragility.**
+- *Why it mattered:* `pytest` auto-discovers every `test_*.py`, so the untracked live-LLM smoke
+  scripts got collected — and `scripts/test_llm.py` (with the intentionally-broken `LitelLM` import)
+  aborted the *entire* suite at collection time. Separately, the tutorial's agent test ran the
+  **real** agent → live LLM calls during testing (slow, costs quota, non-deterministic).
+- *Strategy:* (a) add `pytest.ini` with `testpaths = tests` + `--ignore` for the 4 smoke files so
+  `pytest` "just works"; (b) write the real agent tests **mocked** — patch `_call_llm` with a
+  deterministic fake (and learn to key the fake on text unique to the article, `"GPT-5"`, not text
+  that also appears in the prompt's few-shot examples, `"JavaScript"`).
+- *Outcome:* `pytest` → **27 + 6 passing**, fully offline; the suite never fires a live LLM call.
+  **Key insight: tests should exercise *your* logic deterministically — mocking means development
+  continues even when the LLM quota is exhausted.**
+
 ### Design pattern reused in M3
 
 **Template Method — `BaseAgent.execute()`.** Same pattern as M2's `BaseFetcher`: the base class owns
@@ -190,6 +255,11 @@ in M3 — the agent layer didn't have to reinvent structure.
 | E3 | Copied import name was wrong | Run it; fix `import completion` | Code hygiene |
 | E4 | `from src...` fails in a script | Run as module: `python -m ...` from root | Import paths |
 | E5 | Scratch test runs at import | Keep untracked; mock real tests later | Test design |
+| E6 | Free-tier 429s silently dropped articles | Reuse M1/M2 rate limiter; throttle <10/min | Rate limiting |
+| E7 | Swallowed error looked like a real "no" | Mark errors as `error`/skip, don't count | Error handling |
+| E8 | 4 copy-paste bugs wiring tools (incl. middle class not forwarding `tools=`) | Run early, read errors; forward args through the inheritance chain | Inheritance |
+| E9 | Free tier has per-minute AND per-day caps | Read which quota the 429 names; mock so dev ≠ quota-bound | Quotas |
+| E10 | Scratch smoke files broke `pytest` collection | `pytest.ini` (`testpaths`+`--ignore`); mock `_call_llm` | Test design |
 
 ---
 
