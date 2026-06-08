@@ -21,8 +21,13 @@ class HackerNewsFetcher(BaseFetcher):
 
     BASE_URL = "https://hacker-news.firebaseio.com/v0"
 
-    def __init__(self, transformer, storage, limit: int = 30,
-                 rate_limiter: RateLimitStrategy = None):
+    def __init__(
+        self,
+        transformer,
+        storage,
+        limit: int = 30,
+        rate_limiter: RateLimitStrategy = None,
+    ):
         # Parent keeps the transformer ("chef") and storage ("cashier").
         super().__init__(transformer, storage)
         self.limit = limit

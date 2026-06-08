@@ -1,4 +1,5 @@
 """Database MCP server - provides tools to query article database."""
+
 import asyncio
 import sys
 from mcp.server import Server
@@ -34,15 +35,15 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "source": {
                         "type": "string",
-                        "description": "Filter by source (optional, e.g., 'hackernews', 'rss')"
+                        "description": "Filter by source (optional, e.g., 'hackernews', 'rss')",
                     },
                     "limit": {
                         "type": "integer",
                         "description": "Maximum number of articles to return",
-                        "default": 50
-                    }
-                }
-            }
+                        "default": 50,
+                    },
+                },
+            },
         ),
         Tool(
             name="search_articles",
@@ -52,25 +53,22 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search query (searches in title and summary)"
+                        "description": "Search query (searches in title and summary)",
                     },
                     "limit": {
                         "type": "integer",
                         "description": "Maximum results",
-                        "default": 20
-                    }
+                        "default": 20,
+                    },
                 },
-                "required": ["query"]
-            }
+                "required": ["query"],
+            },
         ),
         Tool(
             name="get_sources",
             description="Get list of all available sources in database",
-            inputSchema={
-                "type": "object",
-                "properties": {}
-            }
-        )
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ]
 
 
@@ -79,63 +77,47 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Execute database tool."""
     if not db_manager:
         await init_db()
-    
+
     if name == "query_articles":
         articles = await db_manager.query_articles(
-            source=arguments.get("source"),
-            limit=arguments.get("limit", 50)
+            source=arguments.get("source"), limit=arguments.get("limit", 50)
         )
-        
+
         result = {
             "total": len(articles),
-            "articles": articles[:10]  # Return first 10 full, rest just count
+            "articles": articles[:10],  # Return first 10 full, rest just count
         }
-        
-        return [TextContent(
-            type="text",
-            text=json.dumps(result, indent=2)
-        )]
-    
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
     elif name == "search_articles":
         # Simple search implementation
         query = arguments["query"].lower()
         limit = arguments.get("limit", 20)
-        
+
         # Get all articles and filter
         all_articles = await db_manager.query_articles(limit=1000)
-        
+
         matches = [
-            article for article in all_articles
-            if query in article['title'].lower() or 
-               query in article.get('summary', '').lower()
+            article
+            for article in all_articles
+            if query in article["title"].lower()
+            or query in article.get("summary", "").lower()
         ]
-        
-        result = {
-            "total": len(matches),
-            "query": query,
-            "articles": matches[:limit]
-        }
-        
-        return [TextContent(
-            type="text",
-            text=json.dumps(result, indent=2)
-        )]
-    
+
+        result = {"total": len(matches), "query": query, "articles": matches[:limit]}
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
     elif name == "get_sources":
         # Get unique sources
         articles = await db_manager.query_articles(limit=1000)
-        sources = list(set(a['source'] for a in articles))
-        
-        result = {
-            "sources": sources,
-            "total": len(sources)
-        }
-        
-        return [TextContent(
-            type="text",
-            text=json.dumps(result, indent=2)
-        )]
-    
+        sources = list(set(a["source"] for a in articles))
+
+        result = {"sources": sources, "total": len(sources)}
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
     else:
         raise ValueError(f"Unknown tool: {name}")
 
@@ -159,9 +141,7 @@ async def main():
 
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options()
+            read_stream, write_stream, server.create_initialization_options()
         )
 
 

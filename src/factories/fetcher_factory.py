@@ -1,4 +1,5 @@
 """Factory for creating fetchers (Factory pattern)."""
+
 from typing import Dict, List, Type
 
 from src.fetchers.base_fetcher import BaseFetcher
@@ -39,7 +40,9 @@ class FetcherFactory:
         """
         if source_type not in cls._fetchers:
             available = ", ".join(cls._fetchers)
-            raise ValueError(f"Unknown fetcher type: {source_type}. Available: {available}")
+            raise ValueError(
+                f"Unknown fetcher type: {source_type}. Available: {available}"
+            )
 
         fetcher_class = cls._fetchers[source_type]
 

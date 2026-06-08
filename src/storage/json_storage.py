@@ -1,4 +1,5 @@
 """Save articles to JSON files."""
+
 import json
 from typing import List
 from pathlib import Path

@@ -1,4 +1,5 @@
 """Test database MCP server."""
+
 import asyncio
 import sys
 from mcp import ClientSession, StdioServerParameters
@@ -15,38 +16,36 @@ async def test_database_server():
     # Launch the server with THIS venv's python (so it has mcp + aiosqlite) and
     # as a module from the project root, so its `from src...` imports resolve.
     server_params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "src.mcp.database_server"]
+        command=sys.executable, args=["-m", "src.mcp.database_server"]
     )
-    
+
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            
+
             # List tools
             tools = await session.list_tools()
-            print(f"\n📋 Database tools:")
+            print("\n📋 Database tools:")
             for tool in tools.tools:
                 print(f"  - {tool.name}: {tool.description}")
-            
+
             # Get sources
-            print(f"\n🔧 Getting sources...")
+            print("\n🔧 Getting sources...")
             result = await session.call_tool("get_sources", {})
             print(f"   {result.content[0].text[:200]}")
-            
+
             # Query articles
-            print(f"\n🔧 Querying articles...")
+            print("\n🔧 Querying articles...")
             result = await session.call_tool("query_articles", {"limit": 5})
             print(f"   {result.content[0].text[:300]}")
-            
+
             # Search
-            print(f"\n🔧 Searching for 'AI'...")
-            result = await session.call_tool("search_articles", {
-                "query": "AI",
-                "limit": 3
-            })
+            print("\n🔧 Searching for 'AI'...")
+            result = await session.call_tool(
+                "search_articles", {"query": "AI", "limit": 3}
+            )
             print(f"   {result.content[0].text[:300]}")
-            
+
             print("\n✅ Database MCP server working!")
 
 

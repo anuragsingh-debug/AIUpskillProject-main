@@ -24,8 +24,12 @@ class GitHubTrendingFetcher(BaseFetcher):
             async with session.get(url) as response:  # request the trending page
                 html = await response.text()  # read the response body as text (HTML)
 
-        soup = BeautifulSoup(html, "html.parser")  # turn raw HTML into a searchable tree
-        repos = soup.select("article.Box-row")  # each repo row is an <article class="Box-row">
+        soup = BeautifulSoup(
+            html, "html.parser"
+        )  # turn raw HTML into a searchable tree
+        repos = soup.select(
+            "article.Box-row"
+        )  # each repo row is an <article class="Box-row">
 
         articles = []  # collect the Article objects here
         for repo in repos[:20]:  # keep only the top 20 repos
@@ -34,15 +38,25 @@ class GitHubTrendingFetcher(BaseFetcher):
             if not title_elem:  # this row has no link?
                 continue  # skip it and move on (stay safe)
 
-            title = title_elem.text.strip().replace("\n", "").replace(" ", "")  # clean "owner / repo" -> "owner/repo"
+            title = (
+                title_elem.text.strip().replace("\n", "").replace(" ", "")
+            )  # clean "owner / repo" -> "owner/repo"
             href = title_elem["href"]  # the relative link, e.g. "/owner/repo"
             url = f"https://github.com{href}"  # build the full repo URL
 
-            description_elem = repo.select_one("p")  # description sits in a <p> (may be missing)
-            description = description_elem.text.strip() if description_elem else ""  # empty if none
+            description_elem = repo.select_one(
+                "p"
+            )  # description sits in a <p> (may be missing)
+            description = (
+                description_elem.text.strip() if description_elem else ""
+            )  # empty if none
 
-            stars_elem = repo.select_one("span.d-inline-block.float-sm-right")  # star count element
-            stars = stars_elem.text.strip() if stars_elem else "0"  # use "0" if not found
+            stars_elem = repo.select_one(
+                "span.d-inline-block.float-sm-right"
+            )  # star count element
+            stars = (
+                stars_elem.text.strip() if stars_elem else "0"
+            )  # use "0" if not found
 
             article = Article(  # build our standard Article object
                 title=title,  # repo name as the title
@@ -59,4 +73,3 @@ class GitHubTrendingFetcher(BaseFetcher):
     def get_source_name(self) -> str:
         """Return source name (used for the output filename)."""
         return "github_trending"  # file will be github_trending_articles.md
-

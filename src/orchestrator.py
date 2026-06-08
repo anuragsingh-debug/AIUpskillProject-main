@@ -20,7 +20,9 @@ class FetchOrchestrator:
     mock fetchers instead of hitting the live network.
     """
 
-    def __init__(self, fetchers: List[BaseFetcher], transformer, storage: ArticleStorage):
+    def __init__(
+        self, fetchers: List[BaseFetcher], transformer, storage: ArticleStorage
+    ):
         # All dependencies injected from outside — nothing built in here.
         self.fetchers = fetchers
         self.transformer = transformer
@@ -50,7 +52,9 @@ class FetchOrchestrator:
         if all_articles:
             self.storage.save(all_articles, "all_articles.md")
 
-        print(f"\nTotal: {len(all_articles)} articles from {len(self.fetchers)} sources")
+        print(
+            f"\nTotal: {len(all_articles)} articles from {len(self.fetchers)} sources"
+        )
         return all_articles
 
 
