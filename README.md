@@ -58,11 +58,54 @@ source venv/bin/activate          # macOS/Linux
 pip install --upgrade pip
 pip install -r requirements.txt
 
-cp .env.example .env               # then paste your API key
+# create a .env file in the project root with your model + provider key, e.g.:
+#   LITELLM_MODEL=gemini/gemini-2.5-flash-lite
+#   GEMINI_API_KEY=your-key-here
 python scripts/verify_setup.py    # should print all ✅
 ```
 
 Then open [`docs/milestones/milestone-0-setup.md`](docs/milestones/milestone-0-setup.md).
+
+---
+
+## Running the built pipeline
+
+Run from the **project root**, as modules (`-m`) so the `src` imports resolve.
+On Windows use `./venv/Scripts/python.exe`; on macOS/Linux use `python`.
+
+```bash
+# Full pipeline: fetch -> db -> filter -> summarize -> write
+python -m src.complete_pipeline
+#   -> data/output/newsletter.md   (final newsletter)
+#   -> data/context/               (intermediate filter + summary)
+#   -> data/news_agent.db          (article database)
+
+# Individual pieces
+python -m src.main                   # fetch articles only
+python -m scripts.populate_db        # load fetched markdown into SQLite
+python -m tests.test_db_server       # exercise the database MCP server
+python -m src.evaluation.evaluator   # score the filter agent vs the golden dataset
+```
+
+> ⚠️ The agents make live LLM calls. On the Gemini free tier (the default here)
+> the ~20-requests/day cap can truncate a full pipeline run — the agents fail
+> gracefully and report what completed rather than crashing.
+
+## Evaluation results
+
+`NewsFilterAgent` scored against the 10-case hand-labeled golden dataset
+(`data/evaluation/golden_dataset.json`), full report in
+[`data/evaluation/evaluation_report.md`](data/evaluation/evaluation_report.md):
+
+| Metric | Score |
+|--------|-------|
+| Accuracy | 90.0% (9/10) |
+| Precision | 85.7% |
+| Recall | 100.0% |
+| F1 | 0.923 |
+
+The single miss is a false positive (a Docker release judged AI-relevant) —
+recall is perfect, so no genuinely relevant article was dropped.
 
 ---
 

@@ -233,6 +233,59 @@ merge before starting M4.
 
 **State at end of session:** E6/E7/E9 all DONE and covered by mocked tests. `src/mcp/` (early M4)
 left untracked and out of this commit. M3 committed + pushed; PR opened via compare URL (no `gh`).
+
+---
+
+## Milestone 4 — MCP + Multi-Agent Pipeline  (2026-06-08)
+
+Branch: `feature/milestone-4-mcp`.
+
+| Date | Commit | Action |
+|---|---|---|
+| 2026-06-08 | ba1579f | Hello-world MCP server + stdio client (Evening 15); translated Hinglish comments to English. |
+| 2026-06-08 | de6f4c9 / f92cab6 | `DatabaseManager` (async SQLite) documented + `populate_db` loader (markdown → SQLite). |
+| 2026-06-08 | f266c75 | **Working database MCP server + e2e test.** Fixed `Tool(inputSchema=)` field name (pydantic rejected `input_schema`); added `aiosqlite` dep; routed server diagnostics to **stderr** (stdout is the JSON-RPC channel); UTF-8 on console + file boundaries; launch server via `sys.executable -m` so deps/`src` imports resolve. |
+| 2026-06-08 | bad9555 | `SearchSkill` — reusable wrapper over the MCP `search_articles` tool. |
+| 2026-06-08 | 5683604 | **Summarizer → Writer pipeline** + `complete_pipeline.py` (fetch → db → filter → summarize → write). Hardened `BaseAgent`: transient-5xx retry + per-topic try/except so one failed LLM call (or the daily quota) no longer discards completed summaries. |
+| 2026-06-08 | 33b140b | Repo-wide `ruff format` + lint fixes (E402/E741/F541/F401). |
+
+**Bugs hit + fixed this milestone (verified by running):** wrong MCP `Tool` field name; missing
+`aiosqlite`; MCP server polluting the stdout protocol stream; cp1252 emoji/file crashes in
+populate/summarizer/writer/skill/test; tutorial scripts launching the server with global `python`
+as a bare script (deps + `src` import failures). Summarizer + SearchSkill + DB server all **ran
+end-to-end** (46 articles loaded; 6-topic digest written; search returned live matches).
+
+**Outcome:** MCP database server (3 tools), reusable skill, and the full Filter→Summarize→Write
+pipeline working. Two commits (feat + style) kept the M4 PR clean; pushed; PR created manually
+(installed `gh` via winget but used the compare URL).
+
+---
+
+## Milestone 5 — Evaluation + Documentation  (2026-06-08)
+
+Branch: `feature/milestone-5-evaluation` (off the M4 tip).
+
+1. **Evaluator + golden dataset** (`ebb2ba5`). `FilterEvaluator` scores `NewsFilterAgent` against a
+   10-case hand-labeled `golden_dataset.json` (6 relevant, 4 not) and reports accuracy / precision /
+   recall / F1 with per-case PASS/FAIL. Made it resilient (same E9 lesson as the summarizer): stops
+   cleanly on `DailyQuotaExceeded` and still writes a **partial** report (banner) instead of crashing;
+   empty-results guard; UTF-8 read/write.
+2. **First eval run** hit the daily 20-cap at case 9 (8/10 scored, crash before save) — which is what
+   prompted the resilience fix above. A later full run completed all 10.
+3. **Evaluation results (real, complete run):** **accuracy 90% (9/10), precision 85.7%, recall 100%,
+   F1 0.923.** The single miss is a false positive (a Docker release judged AI-relevant); recall is
+   perfect, so no genuinely relevant article was dropped. Full report:
+   `data/evaluation/evaluation_report.md`.
+4. **Scaffold cleanup** (`468bec0`). Removed unused pre-made curriculum packages `src/mcp_servers/`
+   and `src/orchestration/` (real code lives in `src/mcp/` and `orchestrator.py` /
+   `complete_pipeline.py`); tracked the missing `src/evaluation/__init__.py`; updated the `src`
+   docstring + README layout to match what was actually built.
+5. **Documentation (Evening 24).** Updated `README.md` (accurate setup — no `.env.example`; `-m` run
+   commands; real eval metrics table); added `docs/architecture.md` (as-built) and
+   `docs/deployment.md` (local run / scheduling / Docker / troubleshooting).
+
+**State at end of session:** M5 evaluator + real eval report + full project docs done. One honest
+caveat carried forward: the D2 timing test is still flaky in-suite (passes alone).
 _Next: Milestone 4 (MCP-Powered Pipeline) on `feature/milestone-4-mcp` off the M3 tip._
 
 ---
