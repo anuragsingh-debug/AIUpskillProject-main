@@ -6,6 +6,7 @@ These are MOCKED + offline by design: we never fire a real LLM call. The agent's
 free, and repeatable (same discipline as the M2 mocked orchestrator tests —
 "mock the real call path", and never let a test hit the live network/LLM).
 """
+
 import json
 import tempfile
 from pathlib import Path
@@ -57,19 +58,28 @@ def _fake_llm(prompt, system=None):
     real LLM does.
     """
     if "GPT-5" in prompt:
-        return json.dumps({
-            "relevant": True, "relevance_score": 9,
-            "reasoning": "Discusses an LLM", "key_topics": ["LLM"],
-        })
-    return json.dumps({
-        "relevant": False, "relevance_score": 2,
-        "reasoning": "Web dev, not AI", "key_topics": [],
-    })
+        return json.dumps(
+            {
+                "relevant": True,
+                "relevance_score": 9,
+                "reasoning": "Discusses an LLM",
+                "key_topics": ["LLM"],
+            }
+        )
+    return json.dumps(
+        {
+            "relevant": False,
+            "relevance_score": 2,
+            "reasoning": "Web dev, not AI",
+            "key_topics": [],
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Tool tests (no LLM involved at all)
 # ---------------------------------------------------------------------------
+
 
 def test_calculator_tool():
     result = calculator("10 * 5 + 3")
@@ -91,6 +101,7 @@ def test_web_search_tool_returns_results():
 # ---------------------------------------------------------------------------
 # Parsing / happy-path agent tests (LLM mocked)
 # ---------------------------------------------------------------------------
+
 
 def test_parse_markdown_extracts_articles():
     agent = NewsFilterAgent()
@@ -118,14 +129,15 @@ async def test_agent_keeps_ai_and_bins_non_ai():
         assert output_file.exists()
 
         content = output_file.read_text(encoding="utf-8")
-        assert "GPT-5" in content            # AI article kept
-        assert "JavaScript" not in content   # non-AI article binned
+        assert "GPT-5" in content  # AI article kept
+        assert "JavaScript" not in content  # non-AI article binned
         assert "**Total Output:** 1" in content
 
 
 # ---------------------------------------------------------------------------
 # E7 — honest error handling: a failed call is NOT a "not relevant" verdict
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_failed_llm_call_does_not_keep_article():
@@ -159,7 +171,9 @@ async def test_error_is_set_aside_not_counted_as_rejection():
 
         agent = NewsFilterAgent()
         # Patch the *process* step's judge call so we can inspect its return dict.
-        with patch.object(agent, "_call_llm", side_effect=RuntimeError("429 rate limit")):
+        with patch.object(
+            agent, "_call_llm", side_effect=RuntimeError("429 rate limit")
+        ):
             ctx = await agent._load_context(str(input_file))
             result = await agent._process(ctx)
 
@@ -175,6 +189,7 @@ async def test_error_is_set_aside_not_counted_as_rejection():
 # E9 — daily quota: stop the whole run, mark the rest un-judged (fail-fast)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_daily_quota_stops_run_and_marks_remaining():
     """When the per-day cap is hit, the run stops and every remaining article is
@@ -185,7 +200,8 @@ async def test_daily_quota_stops_run_and_marks_remaining():
 
         agent = NewsFilterAgent()
         with patch.object(
-            agent, "_call_llm",
+            agent,
+            "_call_llm",
             side_effect=DailyQuotaExceeded("RequestsPerDay limit: 20"),
         ):
             ctx = await agent._load_context(str(input_file))
@@ -217,6 +233,7 @@ def test_daily_quota_classifier():
 # E6 — per-minute throttle paces calls without hitting the wall
 # ---------------------------------------------------------------------------
 
+
 def test_throttle_interval_from_requests_per_minute():
     agent = NewsFilterAgent(requests_per_minute=10)
     assert agent._min_interval == pytest.approx(6.0)
@@ -231,8 +248,8 @@ def test_throttle_sleeps_between_back_to_back_calls(monkeypatch):
     monkeypatch.setattr("src.agents.base_agent.time.sleep", lambda s: slept.append(s))
 
     agent = NewsFilterAgent(requests_per_minute=8)  # interval = 7.5s
-    agent._throttle()   # first call: nothing to wait for
-    agent._throttle()   # immediately after: must pace
+    agent._throttle()  # first call: nothing to wait for
+    agent._throttle()  # immediately after: must pace
     assert slept and slept[-1] > 0
 
 

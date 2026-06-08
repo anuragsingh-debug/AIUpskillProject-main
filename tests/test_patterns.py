@@ -1,5 +1,6 @@
 # tests/test_patterns.py
 """Tests for the design patterns added in Milestone 2 (Factory, Strategy)."""
+
 import asyncio
 import time
 from unittest.mock import Mock
@@ -73,6 +74,7 @@ def test_factory_register_adds_new_type():
 
 
 # --- Strategy pattern -------------------------------------------------------
+
 
 def test_both_strategies_share_one_interface():
     """Both strategies are interchangeable RateLimitStrategy instances."""

@@ -9,6 +9,7 @@ are fast, offline, and deterministic — they never call HackerNews/RSS/GitHub.
 NOTE: our orchestrator calls fetcher.fetch_articles() + get_source_name() (not
 fetch_and_save), so those are the methods we fake on each mock fetcher.
 """
+
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock
 
