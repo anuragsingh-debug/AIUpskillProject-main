@@ -37,7 +37,7 @@ Full curriculum overview lives in [`docs/curriculum/overview.md`](docs/curriculu
 
 - **Python 3.11+** with async/await throughout
 - **`aiohttp`** for concurrent HTTP, **`feedparser`** for RSS
-- **LiteLLM** as the LLM provider abstraction — default model is `claude-haiku-4-5-20251001`, swap to any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) by changing one env var
+- **LiteLLM** as the LLM provider abstraction — this repo is currently configured with `gemini/gemini-2.5-flash-lite` (free tier), and you can swap to Claude, OpenAI, or any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) by changing the `LITELLM_MODEL` env var (no code changes)
 - **MCP (Model Context Protocol)** for tool integration in Milestone 4
 - **SQLite** for the database server in Milestone 4
 - **pytest + pytest-asyncio** for tests
@@ -75,14 +75,16 @@ AIUpskillProject/
 ├── .env.example
 ├── scripts/
 │   └── verify_setup.py        # M0 Task 5 runs this
-├── src/                       # students fill this in milestone by milestone
+├── src/                       # built milestone by milestone
 │   ├── models/
 │   ├── fetchers/
+│   ├── transformers/
 │   ├── storage/
 │   ├── agents/
-│   ├── mcp_servers/
+│   ├── mcp/                    # database_server, hello_server, simple_client
 │   ├── skills/
-│   └── orchestration/
+│   ├── evaluation/
+│   └── orchestrator.py / complete_pipeline.py
 ├── tests/
 ├── data/                      # created at runtime
 └── docs/
