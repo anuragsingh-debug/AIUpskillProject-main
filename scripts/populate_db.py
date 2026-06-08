@@ -3,6 +3,11 @@
 # each article into the SQLite database. Safe to re-run — insert_article skips
 # duplicate URLs, so nothing gets inserted twice.
 import asyncio
+import sys
+
+# Windows cp1252 console can't print the ✅ emoji that db_manager.py uses —
+# force UTF-8 so the status prints don't crash (same E2 fix as the agents).
+sys.stdout.reconfigure(encoding="utf-8")
 from src.database.db_manager import DatabaseManager
 from pathlib import Path
 import re
@@ -20,7 +25,9 @@ async def populate_from_markdown():
     # Walk every .md file in the folder, one at a time.
     for md_file in articles_dir.glob("*.md"):
         print(f"Reading {md_file.name}...")
-        content = md_file.read_text()
+        # Read as UTF-8 explicitly — the default on Windows is cp1252, which
+        # chokes on non-Latin bytes in the article text (E2 on the file boundary).
+        content = md_file.read_text(encoding="utf-8")
 
         # Simple parsing: split the file into sections on the --- separator,
         # so each section holds one article.

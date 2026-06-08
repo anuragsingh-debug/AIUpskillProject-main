@@ -16,6 +16,9 @@ litellm==1.55.0
 # Model Context Protocol (Milestone 4)
 mcp==1.1.2
 
+# Async SQLite for the article database (Milestone 4)
+aiosqlite==0.22.1
+
 # Configuration
 python-dotenv==1.0.1
 
