@@ -2,7 +2,7 @@
 import json
 from typing import Dict, Any, List
 from pathlib import Path
-from src.agents.base_agent import BaseAgent
+from src.agents.base_agent import BaseAgent, DailyQuotaExceeded
 import re
 
 
@@ -14,10 +14,12 @@ class NewsFilterAgent(BaseAgent):
     saves filtered articles.
     """
     
-    def __init__(self, tools=None):
-        # Forward `tools` up to BaseAgent so subclasses (e.g. EnhancedFilterAgent)
-        # can pass tool schemas through this middle class.
-        super().__init__(tools=tools)
+    def __init__(self, tools=None, **kwargs):
+        # Forward `tools` AND any BaseAgent options (requests_per_minute,
+        # max_calls_per_run, model, ...) up through this middle class — the E8
+        # lesson: a class in the middle of an inheritance chain must pass through
+        # every argument it doesn't itself consume.
+        super().__init__(tools=tools, **kwargs)
         self.relevance_threshold = 6  # Out of 10
     
     async def _load_context(self, input_path: str) -> Dict[str, Any]:
@@ -89,13 +91,37 @@ class NewsFilterAgent(BaseAgent):
         print(f"🔍 Filtering {len(articles)} articles...")
         
         filtered = []
-        
+        errored = []
+
+        stopped_early = False
         for i, article in enumerate(articles):
             print(f"   [{i+1}/{len(articles)}] {article['title'][:50]}...")
-            
+
             # Ask LLM to judge relevance
-            judgment = self._judge_relevance(article)
-            
+            try:
+                judgment = self._judge_relevance(article)
+            except DailyQuotaExceeded as e:
+                # E9: the daily cap won't clear until reset — stop now and mark
+                # this article + every remaining one as un-judged (honest, E7),
+                # instead of firing 30 more calls that would all 429.
+                remaining = articles[i:]
+                print(f"   🛑 Daily quota hit — stopping. "
+                      f"{len(remaining)} article(s) left un-judged.")
+                for art in remaining:
+                    errored.append({**art, 'error': str(e), 'error_type': 'daily_quota'})
+                stopped_early = True
+                break
+
+            # A failed call is NOT a verdict — we never got an answer, so it must
+            # not masquerade as "not relevant". Set it aside in its own bucket.
+            if judgment['status'] == 'error':
+                errored.append({
+                    **article,
+                    'error': judgment['error'],
+                    'error_type': judgment['error_type'],
+                })
+                continue
+
             if judgment['relevant'] and judgment['relevance_score'] >= self.relevance_threshold:
                 filtered.append({
                     **article,
@@ -106,13 +132,20 @@ class NewsFilterAgent(BaseAgent):
                 print(f"      ✅ Relevant (score: {judgment['relevance_score']})")
             else:
                 print(f"      ❌ Not relevant (score: {judgment['relevance_score']})")
-        
-        print(f"\n📊 Filtered: {len(filtered)}/{len(articles)} articles")
-        
+
+        judged = len(articles) - len(errored)
+        print(f"\n📊 Filtered: {len(filtered)}/{judged} judged articles relevant")
+        if errored:
+            print(f"⚠️  {len(errored)} article(s) could not be judged "
+                  f"(set aside, NOT counted as a verdict)")
+
         return {
             'filtered_articles': filtered,
+            'errored_articles': errored,
             'total_input': len(articles),
-            'total_output': len(filtered)
+            'total_output': len(filtered),
+            'total_errored': len(errored),
+            'stopped_early': stopped_early,
         }
     
     def _judge_relevance(self, article: Dict) -> Dict:
@@ -159,21 +192,43 @@ Your JSON response:"""
                 json_text = response.split('```')[1].split('```')[0]
             
             judgment = json.loads(json_text.strip())
-            
+
             # Validate
             assert 'relevant' in judgment
             assert 'relevance_score' in judgment
             assert 'reasoning' in judgment
-            
+
+            # The LLM actually answered — this is a real verdict we can trust.
+            judgment['status'] = 'judged'
             return judgment
-            
+
+        except DailyQuotaExceeded:
+            # E9: do NOT swallow this as a per-article error — let it bubble up
+            # to _process so the whole run stops (the daily cap won't recover).
+            raise
         except Exception as e:
-            print(f"      ⚠️  Failed to parse LLM response: {e}")
-            # Default to not relevant on error
+            # We never got a usable answer (rate limit / network / bad JSON).
+            # This is NOT a verdict — do NOT record score 0, which would be
+            # indistinguishable from a real "not AI" judgment. Mark it as an
+            # error so _process can set it aside instead of silently binning it.
+            msg = str(e)
+            lower = msg.lower()
+            is_rate_limit = (
+                '429' in msg
+                or 'rate limit' in lower
+                or 'ratelimit' in lower
+                or 'quota' in lower
+                or 'resource_exhausted' in lower
+            )
+            error_type = 'rate_limit' if is_rate_limit else 'error'
+            print(f"      ⚠️  Could not judge ({error_type}): {e}")
             return {
-                'relevant': False,
-                'relevance_score': 0,
-                'reasoning': f'Failed to judge: {e}',
+                'status': 'error',
+                'error': msg,
+                'error_type': error_type,
+                'relevant': None,
+                'relevance_score': None,
+                'reasoning': f'Could not judge: {e}',
                 'key_topics': []
             }
     
@@ -189,14 +244,20 @@ Your JSON response:"""
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         articles = result['filtered_articles']
-        
-        with open(output_path, 'w',encoding="utf-8") as f:
+        errored = result.get('errored_articles', [])
+        total_input = result['total_input']
+        # Filter rate is meaningful only over articles we actually judged.
+        judged = total_input - result.get('total_errored', 0)
+
+        with open(output_path, 'w', encoding="utf-8") as f:
             f.write("# Filtered AI/ML Articles\n\n")
-            f.write(f"**Total Input:** {result['total_input']}\n")
+            f.write(f"**Total Input:** {total_input}\n")
             f.write(f"**Total Output:** {result['total_output']}\n")
-            f.write(f"**Filter Rate:** {result['total_output']/result['total_input']*100:.1f}%\n\n")
+            f.write(f"**Could Not Judge:** {result.get('total_errored', 0)}\n")
+            filter_rate = (result['total_output'] / judged * 100) if judged else 0.0
+            f.write(f"**Filter Rate:** {filter_rate:.1f}% (of judged)\n\n")
             f.write("---\n\n")
-            
+
             for article in articles:
                 f.write(f"## {article['title']}\n\n")
                 f.write(f"**URL:** {article['url']}\n")
@@ -205,5 +266,19 @@ Your JSON response:"""
                 f.write(f"**Key Topics:** {', '.join(article['key_topics'])}\n\n")
                 f.write(f"{article['summary']}\n\n")
                 f.write("---\n\n")
-        
+
+            # Honest trail: articles we never actually judged (rate limit / error),
+            # listed separately so they are not mistaken for "judged not relevant".
+            if errored:
+                f.write("## ⚠️ Could Not Be Judged\n\n")
+                f.write("These were NOT judged (LLM error / rate limit) — neither kept "
+                        "nor rejected on merit. Re-run them after the quota resets:\n\n")
+                for article in errored:
+                    f.write(f"- **{article['title']}** "
+                            f"({article.get('error_type', 'error')}): "
+                            f"{article.get('error', '')}\n")
+                f.write("\n---\n\n")
+
         print(f"💾 Saved {len(articles)} filtered articles to {output_path}")
+        if errored:
+            print(f"   ⚠️  {len(errored)} could not be judged — listed in the report")

@@ -20,9 +20,9 @@ Evening 14: mocked tests + fetch→filter pipeline).
 | M2 | SOLID + patterns | Code that couldn't grow without breaking | Abstractions (ABCs) + dependency injection + tests as guardrails |
 | M3 *(in progress)* | First AI agent | Wiring an LLM in cleanly + Windows/runtime gotchas | LiteLLM `completion()` + `BaseAgent` (Template Method) + UTF-8 console fix |
 
-**Headline results:** 3 live sources (HackerNews + RSS + GitHub Trending), **27 tests passing**,
-`ruff` clean, **77% coverage**. Two "zero-edit" extensions prove the design (GitHub source = OCP,
-JSON storage = DIP).
+**Headline results:** 3 live sources (HackerNews + RSS + GitHub Trending), **40 tests passing**
+(all offline/mocked), `ruff` clean. Two "zero-edit" extensions prove the design (GitHub source = OCP,
+JSON storage = DIP); the agent's rate-limit (E6) and daily-quota (E9) handling is fully mocked-tested.
 
 ---
 
@@ -174,9 +174,15 @@ Each entry follows the same shape so it lifts straight into a report:
   (`src/utils/rate_limiter.py`, and `SemaphoreStrategy` / `TokenBucketStrategy` in
   `src/strategies/rate_limit_strategy.py`) to **space calls under 10/min** before they leave the
   agent — the same "ATM guard" idea that protects the fetchers, now protecting the LLM caller.
-- *Outcome:* (in progress) M3 reuses the M1/M2 rate limiter directly — a second proof that the
-  earlier groundwork pays forward. **Key insight: a single `relevance_threshold` filter is only as
-  trustworthy as the calls behind it; throttle *before* you hit the wall, don't absorb 429s after.**
+- *Outcome:* **DONE (2026-06-08).** `BaseAgent` now paces every LLM call under the per-minute cap
+  via `_throttle()` — `requests_per_minute=8` by default → a minimum 7.5s gap between calls, enforced
+  with `time.monotonic()` + `time.sleep()`. Because the agent's judging loop is *synchronous and
+  serial*, a simple min-interval guard is the right tool here (the async `SemaphoreStrategy` caps
+  *concurrency*, which a serial loop doesn't have); same "throttle before the wall" idea as the M1/M2
+  fetchers, applied to the LLM caller. Covered by mocked tests (`test_throttle_*`). **Key insight: a
+  single `relevance_threshold` filter is only as trustworthy as the calls behind it; throttle *before*
+  you hit the wall, don't absorb 429s after — and match the limiter to the call path (rate vs
+  concurrency, sync vs async).**
 
 **E7. A swallowed error was indistinguishable from a real negative.**
 - *Why it mattered:* the `except` fallback in `_judge_relevance` returned the *same shape* as a
@@ -185,7 +191,14 @@ Each entry follows the same shape so it lifts straight into a report:
 - *Strategy:* distinguish *failure* from *judgment* — mark errored articles as `error`/`unknown` and
   exclude them from the kept/binned tally (or retry), so an outage can never inflate the "rejected"
   count. (Same family as E2's lesson: "the LLM failed" ≠ "the result is negative".)
-- *Outcome:* (planned with E6) honest accounting — the filter rate reflects real judgments only.
+- *Outcome:* **DONE (2026-06-08).** `_judge_relevance` now returns `status: "judged"` on a real LLM
+  answer, or `status: "error"` (with `error_type` = `rate_limit` vs `error`, and `relevance_score:
+  None`) on any failure — no more fake `score: 0`. `_process` routes errored articles into a separate
+  `errored` bucket and skips them (never a verdict); `_save_result` reports `Could Not Judge: N`, a
+  filter rate computed *over judged articles only*, and lists the un-judged ones so they're visible
+  for a re-run, not silently lost. `ruff` clean; existing tests pass. **Known gap:** the working-tree
+  test file was replaced with 2 live tests, so this error path is not yet covered by a mocked test —
+  restoring the mocked suite + a `status: "error"` regression test is the next test task.
 
 **E8. Four copy-paste bugs while wiring tools into the agent (Evening 13).**
 - *Why it mattered:* tutorial snippets for the tools / `EnhancedFilterAgent` / its test carried real
@@ -208,9 +221,14 @@ Each entry follows the same shape so it lifts straight into a report:
 - *Strategy:* recognise that a rate limiter (spacing requests) solves only the **per-minute** (10)
   cap; the **per-day** (20) cap can't be coded around — it needs waiting for reset (~midnight PT),
   a paid tier, or a different model. Plan dev around mocked tests so progress never depends on quota.
-- *Outcome:* the pipeline *code* is proven (fetch → filter → save ran end-to-end); only the live
-  filter demo waits on quota. **Key insight: "rate limited" can mean two different walls — always
-  read which quota id the 429 names.**
+- *Outcome:* **DONE (2026-06-08).** The code now handles the daily wall *gracefully* even though the
+  quota itself can't be removed: (1) a distinct `DailyQuotaExceeded` exception is raised when a 429
+  names the per-day quota (`_is_daily_quota_error`), so the agent **stops the whole run** and marks the
+  current + all remaining articles `error_type: "daily_quota"` (honest, E7) instead of firing 30 more
+  doomed calls; (2) an optional `max_calls_per_run` budget lets a run self-limit (e.g. 15) to stay
+  under the ~20/day cap on purpose. Covered by mocked tests (`test_daily_quota_*`, `test_max_calls_*`).
+  **Key insight: "rate limited" can mean two different walls — read which quota id the 429 names; the
+  per-minute one you throttle, the per-day one you stop for.**
 
 **E10. Scratch smoke scripts poisoned the whole `pytest` run; mocking fixed dev-time fragility.**
 - *Why it mattered:* `pytest` auto-discovers every `test_*.py`, so the untracked live-LLM smoke
@@ -255,10 +273,10 @@ in M3 — the agent layer didn't have to reinvent structure.
 | E3 | Copied import name was wrong | Run it; fix `import completion` | Code hygiene |
 | E4 | `from src...` fails in a script | Run as module: `python -m ...` from root | Import paths |
 | E5 | Scratch test runs at import | Keep untracked; mock real tests later | Test design |
-| E6 | Free-tier 429s silently dropped articles | Reuse M1/M2 rate limiter; throttle <10/min | Rate limiting |
-| E7 | Swallowed error looked like a real "no" | Mark errors as `error`/skip, don't count | Error handling |
-| E8 | 4 copy-paste bugs wiring tools (incl. middle class not forwarding `tools=`) | Run early, read errors; forward args through the inheritance chain | Inheritance |
-| E9 | Free tier has per-minute AND per-day caps | Read which quota the 429 names; mock so dev ≠ quota-bound | Quotas |
+| E6 | Free-tier 429s silently dropped articles | Per-minute `_throttle()` (min-interval) in `BaseAgent` ✅ | Rate limiting |
+| E7 | Swallowed error looked like a real "no" | `status:"error"` + separate `errored` bucket, never score 0 ✅ | Error handling |
+| E8 | 4 copy-paste bugs wiring tools (incl. middle class not forwarding `tools=`) | Run early, read errors; forward args through the inheritance chain (now also `**kwargs`) | Inheritance |
+| E9 | Free tier has per-minute AND per-day caps | `DailyQuotaExceeded` → stop run + optional `max_calls_per_run` budget ✅ | Quotas |
 | E10 | Scratch smoke files broke `pytest` collection | `pytest.ini` (`testpaths`+`--ignore`); mock `_call_llm` | Test design |
 
 ---
