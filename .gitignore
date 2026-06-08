@@ -1,8 +1,14 @@
 # Claude Code local agent files (memory, local settings) — not for the repo
 .claude/
 
-# Generated article output (created at runtime by the fetchers)
+# Generated article output (created at runtime by the fetchers / tests)
 data/articles/
+data/test/
+data/test_articles/
+
+# Generated SQLite database (created at runtime by populate_db / the MCP server)
+*.db
+data/news_agent.db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
