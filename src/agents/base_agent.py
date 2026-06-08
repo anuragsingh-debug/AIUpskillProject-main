@@ -1,4 +1,5 @@
 """Base class for AI agents."""
+
 import json
 import os
 import sys
@@ -87,13 +88,18 @@ class BaseAgent(ABC):
             return
         gap = self._min_interval - (time.monotonic() - self._last_call_at)
         if gap > 0:
-            print(f"   ⏳ Pacing LLM calls: waiting {gap:.1f}s (≤{self.requests_per_minute}/min)")
+            print(
+                f"   ⏳ Pacing LLM calls: waiting {gap:.1f}s (≤{self.requests_per_minute}/min)"
+            )
             time.sleep(gap)
         self._last_call_at = time.monotonic()
 
     def _check_budget(self) -> None:
         """E9: stop before calling if this run's local LLM-call budget is spent."""
-        if self.max_calls_per_run is not None and self._calls_made >= self.max_calls_per_run:
+        if (
+            self.max_calls_per_run is not None
+            and self._calls_made >= self.max_calls_per_run
+        ):
             raise DailyQuotaExceeded(
                 f"Local per-run budget of {self.max_calls_per_run} LLM calls reached "
                 f"(set to stay under the free tier's ~20/day cap)."
@@ -108,6 +114,26 @@ class BaseAgent(ABC):
             or "per day" in msg
             or "requests per day" in msg
             or "generaterequestsperdayperprojectpermodel" in msg
+        )
+
+    @staticmethod
+    def _is_transient_error(err: Exception) -> bool:
+        """True for transient provider-side failures worth a quick retry.
+
+        These are server hiccups (HTTP 5xx / overloaded), NOT client problems
+        like a bad request or a quota cap — retrying those would only waste
+        calls. A 500 "internal error" from Gemini is the classic case.
+        """
+        msg = str(err).lower()
+        name = err.__class__.__name__.lower()
+        return (
+            "internalservererror" in name
+            or "serviceunavailable" in name
+            or 'code": 500' in msg
+            or 'code": 503' in msg
+            or "internal error" in msg
+            or "overloaded" in msg
+            or "try again" in msg
         )
 
     async def execute(self, input_path: str, output_path: str) -> Dict[str, Any]:
@@ -178,19 +204,32 @@ class BaseAgent(ABC):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        self._check_budget()   # E9: respect the per-run cap before spending a call
-        self._throttle()       # E6: pace under the per-minute limit
-        try:
-            response = completion(model=self.model, messages=messages)
-            self._calls_made += 1
-            return response.choices[0].message.content
-        except Exception as e:
-            # E9: a per-DAY 429 won't clear on retry — re-raise as a distinct type
-            # so callers stop the whole run instead of treating it per-article.
-            if self._is_daily_quota_error(e):
-                raise DailyQuotaExceeded(str(e)) from e
-            print(f"❌ LLM call failed: {e}")
-            raise
+        self._check_budget()  # E9: respect the per-run cap before spending a call
+        self._throttle()  # E6: pace under the per-minute limit
+
+        # Retry transient server-side 5xx errors a couple of times with a short
+        # backoff; a daily-quota 429 is never retried (it won't clear today).
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                response = completion(model=self.model, messages=messages)
+                self._calls_made += 1
+                return response.choices[0].message.content
+            except Exception as e:
+                # E9: a per-DAY 429 won't clear on retry — re-raise as a distinct
+                # type so callers stop the run instead of treating it per-article.
+                if self._is_daily_quota_error(e):
+                    raise DailyQuotaExceeded(str(e)) from e
+                if self._is_transient_error(e) and attempt < max_attempts - 1:
+                    wait = 2**attempt  # 1s, then 2s
+                    print(
+                        f"   ⚠️ Transient LLM error ({e.__class__.__name__}); "
+                        f"retry {attempt + 1}/{max_attempts - 1} in {wait}s"
+                    )
+                    time.sleep(wait)
+                    continue
+                print(f"❌ LLM call failed: {e}")
+                raise
 
     def _call_llm_with_tools(self, prompt: str, system: Optional[str] = None) -> str:
         """
@@ -213,8 +252,8 @@ class BaseAgent(ABC):
 
         # Hard cap on rounds — protects against an infinite tool-call loop.
         for _ in range(10):
-            self._check_budget()   # E9: per-run cap
-            self._throttle()       # E6: per-minute pacing
+            self._check_budget()  # E9: per-run cap
+            self._throttle()  # E6: per-minute pacing
             try:
                 response = completion(
                     model=self.model,
@@ -247,11 +286,13 @@ class BaseAgent(ABC):
                 result = self.tool_functions[name](**args)
                 print(f"   📊 Tool result: {result}")
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": name,
-                    "content": json.dumps(result),
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": name,
+                        "content": json.dumps(result),
+                    }
+                )
 
         raise RuntimeError("Tool-call loop exceeded 10 rounds — model is stuck.")
