@@ -6,6 +6,10 @@ data/articles/
 data/test/
 data/test_articles/
 
+# Generated SQLite database (created at runtime by populate_db / the MCP server)
+*.db
+data/news_agent.db
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
