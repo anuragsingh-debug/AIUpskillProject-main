@@ -201,5 +201,41 @@ _Next: rate-limiter fix (per-minute) + honest error handling (E7); then E15 poli
 
 ---
 
+## Session — 2026-06-08 (M3 wrap-up: E6 + E7 + E9 fixed, PR-ready)
+
+Goal: close the three open M3 quality issues, lock them in with offline tests, and get M3 ready to
+merge before starting M4.
+
+1. **E7 — honest error handling (`news_filter_agent.py`).** The `except` in `_judge_relevance` used
+   to return `relevance_score: 0` for *any* failure — indistinguishable from a real "not AI" verdict,
+   so 32/43 rate-limited articles had been silently binned. Now it returns `status: "judged"` on a
+   real answer, or `status: "error"` (`error_type` = `rate_limit`/`error`, `relevance_score: None`)
+   on failure. `_process` routes errors into a separate `errored` bucket (never a verdict);
+   `_save_result` reports `Could Not Judge: N`, a filter rate computed over judged-only, and lists the
+   un-judged articles for a re-run.
+2. **E6 — per-minute throttle (`base_agent.py`).** Added `_throttle()` (min-interval via
+   `time.monotonic()`/`time.sleep()`), `requests_per_minute=8` default (≈7.5s gap). Applied in both
+   `_call_llm` and `_call_llm_with_tools`. A serial loop has no concurrency, so a rate (not semaphore)
+   guard is the correct fit.
+3. **E9 — daily-cap handling.** New `DailyQuotaExceeded` exception raised when a 429 names the per-day
+   quota (`_is_daily_quota_error`); `_process` catches it, **stops the run**, and marks the current +
+   all remaining articles `daily_quota` (fail-fast, honest). Added an optional `max_calls_per_run`
+   budget so a run can self-limit under the ~20/day cap.
+4. **Inheritance fix (E8 redux).** `NewsFilterAgent` and `EnhancedFilterAgent` now forward `**kwargs`
+   up to `BaseAgent`, so the new options pass through the 3-level chain. Also fixed
+   `EnhancedFilterAgent._judge_relevance`, which still returned the old `score: 0` shape with **no
+   `status`** — it would have `KeyError`'d the inherited `_process`.
+5. **Tests restored + extended.** The working-tree `test_news_filter_agent.py` had been replaced with
+   2 *live* tests; restored the mocked suite and added coverage for throttle, error-bucketing, daily
+   quota fail-fast, the per-run budget, and the quota classifier. **40 tests pass, fully offline.**
+6. **Housekeeping.** Cleaned a stray unused `List` import in `web_search.py`; added `ruff.toml` to
+   exclude the scratch smoke scripts from lint (mirroring `pytest.ini`). `ruff check src tests` clean.
+
+**State at end of session:** E6/E7/E9 all DONE and covered by mocked tests. `src/mcp/` (early M4)
+left untracked and out of this commit. M3 committed + pushed; PR opened via compare URL (no `gh`).
+_Next: Milestone 4 (MCP-Powered Pipeline) on `feature/milestone-4-mcp` off the M3 tip._
+
+---
+
 *Living document — update at the end of each working session so the final report has a complete
 trail.*

@@ -1,0 +1,10 @@
+# Scratch smoke scripts fire LIVE LLM calls and are excluded from the test suite
+# (see pytest.ini). Exclude them from lint as well — they are throwaway probes,
+# not deliverables, so their tutorial-style quirks shouldn't fail `ruff`.
+extend-exclude = [
+    "tests/test_base_agent.py",
+    "tests/test_filter_agent.py",
+    "tests/test_enhanced_agent.py",
+    "tests/test_tools_wiring.py",
+    "scripts/test_llm.py",
+]

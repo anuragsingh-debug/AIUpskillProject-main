@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 
@@ -11,6 +12,17 @@ from litellm import completion
 # terminals default to cp1252 which can't encode them. Force UTF-8 once here so
 # every agent that prints is safe.
 sys.stdout.reconfigure(encoding="utf-8")
+
+
+class DailyQuotaExceeded(Exception):
+    """Raised when the provider's per-DAY request cap (or our own per-run call
+    budget) is hit.
+
+    This is deliberately distinct from an ordinary per-minute 429: a per-minute
+    limit clears in seconds (so spacing calls fixes it — see E6), but the daily
+    cap will not clear until the quota resets (~midnight PT). Callers should
+    therefore STOP the run rather than retry or mark each article individually.
+    """
 
 
 class BaseAgent(ABC):
@@ -26,6 +38,8 @@ class BaseAgent(ABC):
         self,
         model: Optional[str] = None,
         tools: Optional[List[Dict]] = None,
+        requests_per_minute: int = 8,
+        max_calls_per_run: Optional[int] = None,
     ):
         """
         Initialize agent.
@@ -34,6 +48,12 @@ class BaseAgent(ABC):
             model: LiteLLM model string. Defaults to LITELLM_MODEL from env.
             tools: Optional list of tool schemas (OpenAI / LiteLLM format) the
                 LLM is allowed to call.
+            requests_per_minute: E6 per-minute throttle. The free tier allows
+                ~10 LLM calls/min; we pace to 8 by default (a safety margin) by
+                enforcing a minimum gap between calls. Set to 0 to disable.
+            max_calls_per_run: E9 per-run budget. The free tier ALSO caps ~20
+                calls/DAY, which no throttle can dodge. Setting e.g. 15 makes a
+                run stop itself before burning the daily cap. None = no cap.
         """
         self.model = model or os.getenv("LITELLM_MODEL")
         if not self.model:
@@ -46,9 +66,49 @@ class BaseAgent(ABC):
         self.tools = tools or []
         self.tool_functions: Dict[str, Callable] = {}
 
+        # E6 — per-minute throttle. The agent loop is serial, so a simple
+        # "minimum gap between calls" is enough; no async semaphore needed in
+        # this synchronous call path (cf. the M1/M2 fetcher's SemaphoreStrategy).
+        self.requests_per_minute = requests_per_minute
+        self._min_interval = 60.0 / requests_per_minute if requests_per_minute else 0.0
+        self._last_call_at = 0.0
+
+        # E9 — optional local cap to stay under the provider's daily quota.
+        self.max_calls_per_run = max_calls_per_run
+        self._calls_made = 0
+
     def register_tool_function(self, name: str, function: Callable) -> None:
         """Register the actual Python function backing a tool schema name."""
         self.tool_functions[name] = function
+
+    def _throttle(self) -> None:
+        """E6: sleep just long enough to keep LLM calls under the per-minute rate."""
+        if self._min_interval <= 0:
+            return
+        gap = self._min_interval - (time.monotonic() - self._last_call_at)
+        if gap > 0:
+            print(f"   ⏳ Pacing LLM calls: waiting {gap:.1f}s (≤{self.requests_per_minute}/min)")
+            time.sleep(gap)
+        self._last_call_at = time.monotonic()
+
+    def _check_budget(self) -> None:
+        """E9: stop before calling if this run's local LLM-call budget is spent."""
+        if self.max_calls_per_run is not None and self._calls_made >= self.max_calls_per_run:
+            raise DailyQuotaExceeded(
+                f"Local per-run budget of {self.max_calls_per_run} LLM calls reached "
+                f"(set to stay under the free tier's ~20/day cap)."
+            )
+
+    @staticmethod
+    def _is_daily_quota_error(err: Exception) -> bool:
+        """True when a 429 names the per-DAY quota (vs the recoverable per-minute one)."""
+        msg = str(err).lower()
+        return (
+            "perday" in msg
+            or "per day" in msg
+            or "requests per day" in msg
+            or "generaterequestsperdayperprojectpermodel" in msg
+        )
 
     async def execute(self, input_path: str, output_path: str) -> Dict[str, Any]:
         """
@@ -118,10 +178,17 @@ class BaseAgent(ABC):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        self._check_budget()   # E9: respect the per-run cap before spending a call
+        self._throttle()       # E6: pace under the per-minute limit
         try:
             response = completion(model=self.model, messages=messages)
+            self._calls_made += 1
             return response.choices[0].message.content
         except Exception as e:
+            # E9: a per-DAY 429 won't clear on retry — re-raise as a distinct type
+            # so callers stop the whole run instead of treating it per-article.
+            if self._is_daily_quota_error(e):
+                raise DailyQuotaExceeded(str(e)) from e
             print(f"❌ LLM call failed: {e}")
             raise
 
@@ -146,11 +213,19 @@ class BaseAgent(ABC):
 
         # Hard cap on rounds — protects against an infinite tool-call loop.
         for _ in range(10):
-            response = completion(
-                model=self.model,
-                messages=messages,
-                tools=self.tools or None,
-            )
+            self._check_budget()   # E9: per-run cap
+            self._throttle()       # E6: per-minute pacing
+            try:
+                response = completion(
+                    model=self.model,
+                    messages=messages,
+                    tools=self.tools or None,
+                )
+                self._calls_made += 1
+            except Exception as e:
+                if self._is_daily_quota_error(e):
+                    raise DailyQuotaExceeded(str(e)) from e
+                raise
             msg = response.choices[0].message
 
             # No tool calls -> the model gave its final answer.
