@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI News Pipeline — Live Simulation</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🤖</span>
+      <div>
+        <h1>AI News Pipeline</h1>
+        <p class="sub">Multi-agent simulation &mdash; Fetch → Filter → Summarize → Write</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <label class="speed">
+        Speed
+        <select id="speed">
+          <option value="1.5">0.5×</option>
+          <option value="1" selected>1×</option>
+          <option value="0.5">2×</option>
+          <option value="0.2">5×</option>
+        </select>
+      </label>
+      <button id="startBtn" class="btn btn-primary">▶ Start Pipeline</button>
+      <button id="resetBtn" class="btn btn-ghost" disabled>↺ Reset</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Stage rail -->
+    <section class="stages" id="stages">
+      <div class="stage" data-stage="fetch">
+        <div class="stage-icon">📰</div>
+        <div class="stage-body">
+          <h3>1 · Fetch</h3>
+          <p class="stage-meta" id="meta-fetch">Pull articles from sources</p>
+          <div class="bar"><span id="bar-fetch"></span></div>
+        </div>
+        <div class="stage-status" id="status-fetch">idle</div>
+      </div>
+      <div class="stage" data-stage="db">
+        <div class="stage-icon">💾</div>
+        <div class="stage-body">
+          <h3>2 · Database</h3>
+          <p class="stage-meta" id="meta-db">Store in SQLite (MCP)</p>
+          <div class="bar"><span id="bar-db"></span></div>
+        </div>
+        <div class="stage-status" id="status-db">idle</div>
+      </div>
+      <div class="stage" data-stage="filter">
+        <div class="stage-icon">🔍</div>
+        <div class="stage-body">
+          <h3>3 · Filter</h3>
+          <p class="stage-meta" id="meta-filter">AI agent judges relevance</p>
+          <div class="bar"><span id="bar-filter"></span></div>
+        </div>
+        <div class="stage-status" id="status-filter">idle</div>
+      </div>
+      <div class="stage" data-stage="summarize">
+        <div class="stage-icon">📝</div>
+        <div class="stage-body">
+          <h3>4 · Summarize</h3>
+          <p class="stage-meta" id="meta-summarize">Group by topic + summarize</p>
+          <div class="bar"><span id="bar-summarize"></span></div>
+        </div>
+        <div class="stage-status" id="status-summarize">idle</div>
+      </div>
+      <div class="stage" data-stage="write">
+        <div class="stage-icon">✍️</div>
+        <div class="stage-body">
+          <h3>5 · Write</h3>
+          <p class="stage-meta" id="meta-write">Compose the newsletter</p>
+          <div class="bar"><span id="bar-write"></span></div>
+        </div>
+        <div class="stage-status" id="status-write">idle</div>
+      </div>
+      <div class="stage" data-stage="evaluate">
+        <div class="stage-icon">🧪</div>
+        <div class="stage-body">
+          <h3>6 · Evaluate</h3>
+          <p class="stage-meta" id="meta-evaluate">Score vs golden dataset</p>
+          <div class="bar"><span id="bar-evaluate"></span></div>
+        </div>
+        <div class="stage-status" id="status-evaluate">idle</div>
+      </div>
+    </section>
+
+    <!-- KPI strip -->
+    <section class="kpis">
+      <div class="kpi"><span class="kpi-num" id="kpi-fetched">0</span><span class="kpi-lbl">Fetched</span></div>
+      <div class="kpi"><span class="kpi-num kpi-good" id="kpi-kept">0</span><span class="kpi-lbl">Kept (AI)</span></div>
+      <div class="kpi"><span class="kpi-num kpi-bad" id="kpi-binned">0</span><span class="kpi-lbl">Binned</span></div>
+      <div class="kpi"><span class="kpi-num" id="kpi-topics">0</span><span class="kpi-lbl">Topics</span></div>
+      <div class="kpi"><span class="kpi-num" id="kpi-rate">—</span><span class="kpi-lbl">Filter rate</span></div>
+    </section>
+
+    <div class="grid">
+      <!-- Live article feed -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Live article feed</h2>
+          <span class="hint">each card = one LLM relevance judgment</span>
+        </div>
+        <div id="feed" class="feed">
+          <div class="empty">Press <b>Start Pipeline</b> to begin the simulation.</div>
+        </div>
+      </section>
+
+      <!-- Console -->
+      <section class="panel">
+        <div class="panel-head"><h2>Pipeline console</h2></div>
+        <pre id="console" class="console"></pre>
+      </section>
+    </div>
+
+    <!-- Evaluation results -->
+    <section class="panel eval-panel" id="evalPanel" hidden>
+      <div class="panel-head">
+        <h2>🧪 Filter Quality — Evaluation (Milestone 5)</h2>
+        <span class="badge-replay" title="The demo does not call the LLM. Aggregate metrics and PASS/FAIL are from a real verified Gemini run; individual case scores 7–20 are illustrative.">⟳ Replay of verified run · metrics real · per-case scores illustrative</span>
+      </div>
+
+      <div class="metrics" id="metrics"></div>
+
+      <div class="ba-row" id="baRow"></div>
+
+      <h3 class="cases-title">Golden test cases <span id="caseCount" class="hint"></span></h3>
+      <div class="cases" id="cases"></div>
+    </section>
+
+    <!-- Newsletter output -->
+    <section class="panel newsletter-panel" id="newsletterPanel" hidden>
+      <div class="panel-head">
+        <h2>📄 Generated Newsletter</h2>
+        <div class="news-actions">
+          <button id="prevPage" class="btn btn-ghost">← Prev</button>
+          <span id="pageInd" class="page-ind">Page 1 / 1</span>
+          <button id="nextPage" class="btn btn-ghost">Next →</button>
+          <span class="divider"></span>
+          <button id="dlMd" class="btn btn-primary">⬇ Download .md</button>
+          <button id="dlHtml" class="btn btn-ghost">⬇ .html</button>
+          <button id="printBtn" class="btn btn-ghost">🖨 Print / PDF</button>
+        </div>
+      </div>
+      <div id="pages" class="pages"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Simulation only · no LLM calls · does not touch <code>src/</code></span>
+    <span>Production run: 43 → 7 articles (16.3%) · filter eval F1 ≈ 1.0 on 20 cases</span>
+  </footer>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
