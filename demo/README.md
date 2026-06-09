@@ -1,34 +1,42 @@
-# Pipeline Simulation (demo UI)
+# Pipeline Demo UI
 
-A self-contained **HTML/CSS/JS** visualisation of the AI news pipeline
-(**Fetch → Database → Filter → Summarize → Write**). Built for the project
-demo / final report.
+A visualisation of the AI news pipeline
+(**Fetch → Database → Filter → Summarize → Write → Evaluate**) with **two modes**.
 
-## What it does
-- Click **▶ Start Pipeline** and watch all 5 stages run with live progress bars.
-- The **Filter** stage shows each article being judged by the AI agent — a live
-  relevance score (0–10), with **KEEP** (≥6, green) or **BIN** (<6, red) and the
-  agent's reasoning + topic tags.
-- The **Write** stage produces a multi-page **Newsletter** you can page through,
-  **download** as `.md` or `.html`, or **Print / Save as PDF**.
+## Two modes
 
-## How to run
-Just **double-click `index.html`** (opens in any browser). No server, no install.
+### 1. Replay (offline, default) — runs anywhere
+- Double-click `index.html`, or open the live site, and click **▶ Start Pipeline**.
+- Replays the pipeline using **real data** from the project's own outputs (`data.js`).
+- Makes **no LLM calls**, uses **no quota**, imports nothing from `src/`.
+- Perfect for sharing a public link (GitHub Pages).
 
-## Important: this is a SIMULATION
-- ❌ Makes **no LLM calls** and **uses no API quota**.
-- ❌ Imports nothing from `src/` and changes **no** production code or tests.
-- ✅ Uses **real data** extracted from the project's own output files
-  (`data/articles/`, `data/context/`) — see `data.js`.
+### 2. Live (real LLM) — real-time, needs the local server
+- Start the backend from the repo root:
+  ```bash
+  ./venv/Scripts/python.exe -m server
+  ```
+- Open **http://localhost:8000/**, set **Mode → "Live (real LLM)"**, click **Run**.
+- This runs the **real** `src/` agents: it fetches live news (HackerNews + RSS) and
+  the real `NewsFilterAgent` judges each article via the LLM — streamed to the page
+  over Server-Sent Events. **Not a replay.**
+- ⚠️ Uses **real Gemini quota** (~6–10 calls per run; free tier ≈ 20/day). If the
+  daily cap is hit it stops gracefully (the E9 behaviour). On GitHub Pages (no
+  backend) Live mode shows a friendly "needs local server" message.
 
-The live counts are for the 12-article sample in `data.js`. The real production
-run processed **43 → 7 articles (16.3%)**; the filter agent's quality is measured
-separately in `data/evaluation/evaluation_report.md`.
+## Output
+Both modes produce a multi-page **Newsletter** you can page through and download as
+**PDF** (bundled `vendor/html2pdf.bundle.min.js`), `.md`, `.html`, or Print.
 
 ## Files
 | File | Purpose |
 |---|---|
-| `index.html` | layout / structure |
+| `index.html` | layout / structure (mode toggle, controls) |
 | `styles.css` | styling (dark dashboard + print styles) |
-| `app.js` | animation engine, judging feed, pagination, downloads |
-| `data.js` | real article + summary data (no secrets) |
+| `app.js` | engine: replay animation, live SSE client, judging feed, pagination, downloads |
+| `data.js` | real article + summary + eval data for Replay (no secrets) |
+| `vendor/html2pdf.bundle.min.js` | client-side PDF generation |
+| `../server.py` | aiohttp backend for Live mode (runs the real pipeline) |
+
+Nothing here contains secrets; the `.env` API key is never used by the static site
+(only by `server.py`, locally).

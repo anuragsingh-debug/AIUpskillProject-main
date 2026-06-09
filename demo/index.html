@@ -17,6 +17,13 @@
     </div>
     <div class="topbar-actions">
       <label class="speed">
+        Mode
+        <select id="mode">
+          <option value="replay" selected>Replay (offline)</option>
+          <option value="live">Live (real LLM)</option>
+        </select>
+      </label>
+      <label class="speed">
         Speed
         <select id="speed">
           <option value="1.5">0.5×</option>
@@ -141,9 +148,10 @@
           <span id="pageInd" class="page-ind">Page 1 / 1</span>
           <button id="nextPage" class="btn btn-ghost">Next →</button>
           <span class="divider"></span>
-          <button id="dlMd" class="btn btn-primary">⬇ Download .md</button>
+          <button id="dlPdf" class="btn btn-primary">⬇ Download PDF</button>
+          <button id="dlMd" class="btn btn-ghost">⬇ .md</button>
           <button id="dlHtml" class="btn btn-ghost">⬇ .html</button>
-          <button id="printBtn" class="btn btn-ghost">🖨 Print / PDF</button>
+          <button id="printBtn" class="btn btn-ghost">🖨 Print</button>
         </div>
       </div>
       <div id="pages" class="pages"></div>
@@ -151,10 +159,11 @@
   </main>
 
   <footer class="foot">
-    <span>Simulation only · no LLM calls · does not touch <code>src/</code></span>
+    <span id="modeNote"><b>Replay</b> mode · no LLM calls · runs anywhere</span>
     <span>Production run: 43 → 7 articles (16.3%) · filter eval F1 ≈ 1.0 on 20 cases</span>
   </footer>
 
+  <script src="vendor/html2pdf.bundle.min.js"></script>
   <script src="data.js"></script>
   <script src="app.js"></script>
 </body>
