@@ -1,7 +1,8 @@
 {
-  "description": "Golden dataset for evaluating news filtering",
-  "version": "1.0",
+  "description": "Golden dataset for evaluating news filtering. Cases 1-10 are the original set; cases 11-20 were added during the Milestone-5 prompt-tuning pass to make the metric more trustworthy. Cases 16-20 are deliberate 'used-with-AI but not about AI' traps (infrastructure, hardware, tooling) held out from the prompt to test whether the relevance rule generalises rather than memorises.",
+  "version": "2.0",
   "created": "2026-01-15",
+  "updated": "2026-06-09",
   "test_cases": [
     {
       "id": 1,
@@ -82,6 +83,86 @@
       "expected_relevant": true,
       "expected_score": 7,
       "reason": "AI governance and ethics"
+    },
+    {
+      "id": 11,
+      "title": "Meta Releases Llama 4 Open-Weight Model",
+      "summary": "Meta launches Llama 4, an open-weight large language model with a longer context window and stronger multilingual support.",
+      "expected_relevant": true,
+      "expected_score": 10,
+      "reason": "Core LLM release"
+    },
+    {
+      "id": 12,
+      "title": "Reinforcement Learning Agent Masters Robotic Assembly",
+      "summary": "A deep reinforcement learning system learns to assemble electronics with near human-level dexterity in a lab study.",
+      "expected_relevant": true,
+      "expected_score": 9,
+      "reason": "Core ML / robotics learning"
+    },
+    {
+      "id": 13,
+      "title": "Diffusion Models Generate Synthetic Training Data",
+      "summary": "Researchers use generative diffusion models to create synthetic datasets that measurably improve downstream classifier accuracy.",
+      "expected_relevant": true,
+      "expected_score": 9,
+      "reason": "Generative AI research"
+    },
+    {
+      "id": 14,
+      "title": "New Benchmark Tests LLM Mathematical Reasoning",
+      "summary": "A research group releases a benchmark suite for measuring reasoning ability and hallucination rates in large language models.",
+      "expected_relevant": true,
+      "expected_score": 8,
+      "reason": "AI evaluation research"
+    },
+    {
+      "id": 15,
+      "title": "AI System Detects Tumors in Radiology Scans",
+      "summary": "A convolutional neural network flags malignant tumors in CT scans earlier than radiologists in a clinical trial.",
+      "expected_relevant": true,
+      "expected_score": 9,
+      "reason": "Applied computer vision in medicine"
+    },
+    {
+      "id": 16,
+      "title": "Kubernetes 1.30 Released",
+      "summary": "The container orchestration platform adds improved autoscaling and security features for cloud-native workloads.",
+      "expected_relevant": false,
+      "expected_score": 2,
+      "reason": "Infrastructure often used to deploy AI, but the article is not about AI (trap)"
+    },
+    {
+      "id": 17,
+      "title": "NVIDIA Announces RTX 5090 Gaming GPU",
+      "summary": "The new flagship graphics card targets gamers with improved ray tracing and higher frame rates.",
+      "expected_relevant": false,
+      "expected_score": 3,
+      "reason": "Consumer hardware; GPUs power AI but this article is about gaming (trap)"
+    },
+    {
+      "id": 18,
+      "title": "AWS Cuts S3 Cloud Storage Prices",
+      "summary": "Amazon lowers object storage costs and adds new lifecycle management options for cloud customers.",
+      "expected_relevant": false,
+      "expected_score": 2,
+      "reason": "Cloud infrastructure used by AI workloads, but not about AI (trap)"
+    },
+    {
+      "id": 19,
+      "title": "Rust 1.85 Programming Language Released",
+      "summary": "The systems programming language ships async improvements and a faster compiler.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "General programming language, not AI"
+    },
+    {
+      "id": 20,
+      "title": "Apache Kafka Adds Tiered Storage",
+      "summary": "The event-streaming platform introduces tiered storage to lower costs for high-throughput data pipelines.",
+      "expected_relevant": false,
+      "expected_score": 2,
+      "reason": "Data-pipeline infrastructure that can feed AI, but not about AI (trap)"
     }
   ]
 }

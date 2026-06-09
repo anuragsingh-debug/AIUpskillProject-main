@@ -172,13 +172,23 @@ class NewsFilterAgent(BaseAgent):
         Returns:
             Dict with relevant, relevance_score, reasoning
         """
-        prompt = f"""You are an expert AI/ML news analyst. Judge if this article is relevant to AI/ML.
+        prompt = f"""You are an expert AI/ML news analyst. Decide whether this article is genuinely ABOUT artificial intelligence / machine learning.
 
 Article:
 Title: {article['title']}
 Summary: {article['summary']}
 
-Relevant topics include: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, GPT, Stable Diffusion, AI Ethics, AI Safety
+DECISION RULE (read carefully):
+An article is relevant ONLY if its MAIN SUBJECT is AI/ML itself — its research, models, techniques, algorithms, or a direct application of AI/ML to solve a problem. A topic is NOT relevant merely because AI is built with it, runs on it, or could use it. General software, programming languages, databases, containers, cloud services, DevOps/CI tools, networking, and consumer hardware are NOT AI/ML topics — even though AI systems are commonly built on top of them. When an article is only infrastructure or tooling that *could* support AI, it is NOT relevant.
+
+Relevant AI/ML topics: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, Generative AI, Reinforcement Learning, AI Ethics/Safety, model releases and benchmarks.
+
+Scoring guide:
+- 8-10: core AI/ML — model releases, research, novel architectures or techniques.
+- 6-7: a clear real-world application of AI/ML, or AI governance/ethics.
+- 4-5: AI mentioned only in passing or tangentially.
+- 1-3: NOT about AI/ML — general software, infrastructure, hardware, or unrelated topics.
+Set "relevant" to true ONLY when the score is 6 or higher.
 
 Output ONLY valid JSON with this exact format:
 {{
@@ -189,8 +199,9 @@ Output ONLY valid JSON with this exact format:
 }}
 
 Examples:
-- "GPT-4 Released" -> {{"relevant": true, "relevance_score": 10, "reasoning": "Major LLM release", "key_topics": ["LLM", "GPT"]}}
-- "New JavaScript Framework" -> {{"relevant": false, "relevance_score": 1, "reasoning": "Web dev, not AI", "key_topics": []}}
+- "Researchers train a neural network to translate sign language in real time" -> {{"relevant": true, "relevance_score": 9, "reasoning": "Applied deep learning / computer vision", "key_topics": ["Neural Networks", "Computer Vision"]}}
+- "Jenkins CI server adds new build pipeline plugins" -> {{"relevant": false, "relevance_score": 2, "reasoning": "DevOps tooling; may be used in ML ops but the article is not about AI", "key_topics": []}}
+- "Local bakery wins national pastry award" -> {{"relevant": false, "relevance_score": 1, "reasoning": "Unrelated to AI", "key_topics": []}}
 
 Your JSON response:"""
 
