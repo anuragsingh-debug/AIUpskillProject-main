@@ -62,6 +62,18 @@ class BaseAgent(ABC):
                 "No model configured. Set LITELLM_MODEL in .env "
                 "or pass `model=` to the agent constructor."
             )
+        # A local Ollama model ("ollama/..." or "ollama_chat/...") runs on THIS
+        # machine: there is no provider, so there is no per-minute rate limit and
+        # no per-DAY quota. The E6 throttle and E9 budget below exist ONLY to keep
+        # us under a hosted free tier — applying them to a local model would just
+        # make us sleep ~7.5s before every call for a limit that doesn't exist.
+        # So when the model is local we neutralize both automatically. (Switching
+        # `.env` back to gemini/... silently restores the hosted-tier behavior.)
+        self._is_local = self.model.startswith(("ollama/", "ollama_chat/"))
+        if self._is_local:
+            requests_per_minute = 0      # no per-minute limit locally → no pacing
+            max_calls_per_run = None     # no daily cap locally → no run budget
+
         # Tool schemas sent to the LLM (the "menu"), and the real Python
         # functions that back each schema name (the "kitchen").
         self.tools = tools or []
@@ -77,6 +89,20 @@ class BaseAgent(ABC):
         # E9 — optional local cap to stay under the provider's daily quota.
         self.max_calls_per_run = max_calls_per_run
         self._calls_made = 0
+
+        # Per-call options passed ONLY to a local Ollama model. On a CPU (no GPU
+        # here) the two biggest, safest speedups are:
+        #   • num_ctx — Ollama allocates a KV cache for the FULL context window
+        #     regardless of how much we actually use. Its default for this model
+        #     is 32768; our largest prompt (the batched filter) is ~5k tokens, so
+        #     8192 covers every agent with headroom while shrinking that cache ~4x.
+        #   • keep_alive — without it Ollama unloads the model between calls and
+        #     pays the multi-second reload cost on the NEXT call. Pinning it
+        #     resident for 30m keeps the whole pipeline warm.
+        # These are no-ops for hosted models, so we only attach them when local.
+        self._llm_options: Dict[str, Any] = {}
+        if self._is_local:
+            self._llm_options = {"num_ctx": 8192, "keep_alive": "30m"}
 
     def register_tool_function(self, name: str, function: Callable) -> None:
         """Register the actual Python function backing a tool schema name."""
@@ -212,7 +238,9 @@ class BaseAgent(ABC):
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
-                response = completion(model=self.model, messages=messages)
+                response = completion(
+                    model=self.model, messages=messages, **self._llm_options
+                )
                 self._calls_made += 1
                 return response.choices[0].message.content
             except Exception as e:
@@ -259,6 +287,7 @@ class BaseAgent(ABC):
                     model=self.model,
                     messages=messages,
                     tools=self.tools or None,
+                    **self._llm_options,
                 )
                 self._calls_made += 1
             except Exception as e:

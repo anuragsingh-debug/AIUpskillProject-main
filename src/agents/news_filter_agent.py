@@ -15,6 +15,56 @@ class NewsFilterAgent(BaseAgent):
     saves filtered articles.
     """
 
+    # Cheap keyword pre-filter run BEFORE the LLM. On a local CPU model the cost
+    # is token generation, so the fastest optimization is simply to NOT ask the
+    # model about articles that obviously aren't AI/ML (a git rewrite, an npm
+    # release, an electric pickup...). Any article whose title/summary contains
+    # one of these signals is sent to the LLM for a real verdict; the rest are
+    # rejected up front. Short/ambiguous tokens use word boundaries so "ai" does
+    # NOT match "training"/"email" and "ml" does NOT match "html". The list is
+    # deliberately broad (recall over precision): a false POSITIVE just costs one
+    # extra LLM judgement, whereas a false NEGATIVE silently drops a real hit.
+    AI_KEYWORD_PATTERN = re.compile(
+        "|".join(
+            [
+                r"\ba\.?i\.?\b",
+                r"\bml\b",
+                r"machine[ -]?learning",
+                r"deep[ -]?learning",
+                r"neural",
+                r"\bllms?\b",
+                r"language model",
+                r"\bgpt\b",
+                r"claude",
+                r"gemini",
+                r"openai",
+                r"anthropic",
+                r"transformer",
+                r"\bagents?\b",
+                r"\bagentic\b",
+                r"computer vision",
+                r"opencv",
+                r"\bnlp\b",
+                r"embedding",
+                r"\brag\b",
+                r"fine[ -]?tun",
+                r"diffusion",
+                r"reinforcement",
+                r"generative",
+                r"chatbot",
+                r"\binference\b",
+                r"pytorch",
+                r"tensorflow",
+                r"hugging\s?face",
+                r"\bskills?\b",
+                r"dataset",
+                r"benchmark",
+                r"\bmodels?\b",
+            ]
+        ),
+        re.IGNORECASE,
+    )
+
     def __init__(self, tools=None, **kwargs):
         # Forward `tools` AND any BaseAgent options (requests_per_minute,
         # max_calls_per_run, model, ...) up through this middle class — the E8
@@ -22,6 +72,25 @@ class NewsFilterAgent(BaseAgent):
         # every argument it doesn't itself consume.
         super().__init__(tools=tools, **kwargs)
         self.relevance_threshold = 6  # Out of 10
+
+        # How many articles to judge per LLM call. We judge in small CHUNKS
+        # rather than one-article-per-call (N slow round-trips that also burn a
+        # hosted daily quota fast) OR all-at-once (one giant array a small local
+        # model can't keep aligned — measured: a 3B model returned 33 verdicts
+        # for 64 articles). ~10 is the sweet spot: few calls, and an array short
+        # enough that the model still lines its answers up 1:1 with ours.
+        self.batch_size = 10
+
+        # When True, run the keyword pre-filter before spending any LLM calls.
+        # On a local CPU model this is the single biggest speedup; flip it off to
+        # have the LLM judge every article (slower, but no keyword blind spots).
+        self.use_keyword_prefilter = True
+
+    def _looks_ai_relevant(self, article: Dict) -> bool:
+        """Cheap, LLM-free check: does the title or summary mention anything
+        AI/ML-ish? Used to skip obviously-irrelevant articles before the LLM."""
+        haystack = f"{article.get('title', '')} {article.get('summary', '')}"
+        return bool(self.AI_KEYWORD_PATTERN.search(haystack))
 
     async def _load_context(self, input_path: str) -> Dict[str, Any]:
         """
@@ -94,18 +163,38 @@ class NewsFilterAgent(BaseAgent):
         filtered = []
         errored = []
 
-        stopped_early = False
-        for i, article in enumerate(articles):
-            print(f"   [{i+1}/{len(articles)}] {article['title'][:50]}...")
+        # Pre-filter: drop articles with no AI/ML keyword BEFORE the LLM, so the
+        # model only judges plausible candidates. A skipped article is a real
+        # (heuristic) "not relevant" verdict — it is neither output nor errored,
+        # exactly like an article the LLM scores below the threshold.
+        if self.use_keyword_prefilter:
+            candidates = [a for a in articles if self._looks_ai_relevant(a)]
+            skipped = len(articles) - len(candidates)
+            print(
+                f"   ⚡ Keyword pre-filter: {len(candidates)} candidate(s) to judge, "
+                f"{skipped} auto-skipped (no AI/ML signal — saved ~{skipped} LLM judgements)"
+            )
+        else:
+            candidates = articles
 
-            # Ask LLM to judge relevance
+        stopped_early = False
+        # Walk the CANDIDATES in chunks of `self.batch_size` — one LLM call per
+        # chunk instead of one per article (a big cut in round-trips and, on a
+        # hosted tier, in quota spent).
+        for start in range(0, len(candidates), self.batch_size):
+            chunk = candidates[start : start + self.batch_size]
+            end = start + len(chunk)
+            print(f"   [{start + 1}-{end}/{len(candidates)}] judging {len(chunk)} in one call...")
+
+            # One batched call for the chunk, with an automatic per-article
+            # fallback if the reply can't be aligned (see _judge_chunk).
             try:
-                judgment = self._judge_relevance(article)
+                judgments = self._judge_chunk(chunk)
             except DailyQuotaExceeded as e:
                 # E9: the daily cap won't clear until reset — stop now and mark
-                # this article + every remaining one as un-judged (honest, E7),
-                # instead of firing 30 more calls that would all 429.
-                remaining = articles[i:]
+                # this chunk + every remaining candidate as un-judged (honest, E7),
+                # instead of firing more calls that would all 429.
+                remaining = candidates[start:]
                 print(
                     f"   🛑 Daily quota hit — stopping. "
                     f"{len(remaining)} article(s) left un-judged."
@@ -117,33 +206,41 @@ class NewsFilterAgent(BaseAgent):
                 stopped_early = True
                 break
 
-            # A failed call is NOT a verdict — we never got an answer, so it must
-            # not masquerade as "not relevant". Set it aside in its own bucket.
-            if judgment["status"] == "error":
-                errored.append(
-                    {
-                        **article,
-                        "error": judgment["error"],
-                        "error_type": judgment["error_type"],
-                    }
-                )
-                continue
+            # Drop each verdict into the right bucket (same rules as before).
+            for article, judgment in zip(chunk, judgments):
+                # A failed call is NOT a verdict — we never got an answer, so it
+                # must not masquerade as "not relevant". Set it aside on its own.
+                if judgment["status"] == "error":
+                    errored.append(
+                        {
+                            **article,
+                            "error": judgment["error"],
+                            "error_type": judgment["error_type"],
+                        }
+                    )
+                    continue
 
-            if (
-                judgment["relevant"]
-                and judgment["relevance_score"] >= self.relevance_threshold
-            ):
-                filtered.append(
-                    {
-                        **article,
-                        "relevance_score": judgment["relevance_score"],
-                        "reasoning": judgment["reasoning"],
-                        "key_topics": judgment.get("key_topics", []),
-                    }
-                )
-                print(f"      ✅ Relevant (score: {judgment['relevance_score']})")
-            else:
-                print(f"      ❌ Not relevant (score: {judgment['relevance_score']})")
+                if (
+                    judgment["relevant"]
+                    and judgment["relevance_score"] >= self.relevance_threshold
+                ):
+                    filtered.append(
+                        {
+                            **article,
+                            "relevance_score": judgment["relevance_score"],
+                            "reasoning": judgment["reasoning"],
+                            "key_topics": judgment.get("key_topics", []),
+                        }
+                    )
+                    print(
+                        f"      ✅ {article['title'][:45]} "
+                        f"(score: {judgment['relevance_score']})"
+                    )
+                else:
+                    print(
+                        f"      ❌ {article['title'][:45]} "
+                        f"(score: {judgment['relevance_score']})"
+                    )
 
         judged = len(articles) - len(errored)
         print(f"\n📊 Filtered: {len(filtered)}/{judged} judged articles relevant")
@@ -161,6 +258,38 @@ class NewsFilterAgent(BaseAgent):
             "total_errored": len(errored),
             "stopped_early": stopped_early,
         }
+
+    def _judge_chunk(self, chunk: List[Dict]) -> List[Dict]:
+        """
+        Judge one chunk of articles in a SINGLE batched call, with a safety net.
+
+        Fast path: `_judge_relevance_batch` grades the whole chunk in one call.
+        If the model's reply can't be parsed or doesn't line up 1:1 with the
+        chunk (a small local model occasionally drops or merges an entry), we do
+        NOT throw the chunk away — we fall back to judging each article on its
+        own. Slower for that one chunk, but it always yields a verdict per
+        article. This is the same partial-failure resilience the fetcher uses
+        (A4): one bad batch must not sink the whole run.
+
+        DailyQuotaExceeded is deliberately NOT caught here — it bubbles up so
+        `_process` can stop the entire run (the per-day cap won't clear today).
+
+        Returns:
+            A list of verdicts the SAME length and order as `chunk`.
+        """
+        try:
+            return self._judge_relevance_batch(chunk)
+        except DailyQuotaExceeded:
+            raise  # let the caller stop the run; today's quota is spent
+        except Exception as e:
+            print(
+                f"      ⚠️ Batch reply unusable ({e}); "
+                f"judging this chunk one article at a time."
+            )
+            # Per-article fallback. _judge_relevance never raises for ordinary
+            # failures (it returns an error verdict), but it DOES re-raise
+            # DailyQuotaExceeded — which propagates up to _process as intended.
+            return [self._judge_relevance(article) for article in chunk]
 
     def _judge_relevance(self, article: Dict) -> Dict:
         """
