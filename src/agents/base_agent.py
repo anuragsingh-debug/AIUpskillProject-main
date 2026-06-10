@@ -102,7 +102,17 @@ class BaseAgent(ABC):
         # These are no-ops for hosted models, so we only attach them when local.
         self._llm_options: Dict[str, Any] = {}
         if self._is_local:
-            self._llm_options = {"num_ctx": 8192, "keep_alive": "30m"}
+            self._llm_options = {
+                "num_ctx": 8192,
+                "keep_alive": "30m",
+                # temperature=0 makes judging DETERMINISTIC. Relevance filtering
+                # is a yes/no classification, not creative writing — Ollama's
+                # default 0.8 adds randomness that makes a small model give the
+                # SAME article different scores on different runs (we saw "Rich
+                # Sutton" score 8 then 7). Zero removes that noise: same input ->
+                # same verdict, and measurably better recall on the golden set.
+                "temperature": 0,
+            }
 
     def register_tool_function(self, name: str, function: Callable) -> None:
         """Register the actual Python function backing a tool schema name."""

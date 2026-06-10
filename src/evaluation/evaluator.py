@@ -65,13 +65,24 @@ class FilterEvaluator:
         # HOW MANY we ask per call changed, so the entire set fits one free quota.
         # If the per-DAY quota is already spent we don't crash: we keep an empty
         # (partial) report card rather than losing everything.
+        cases = [
+            {"title": tc["title"], "summary": tc["summary"]} for tc in test_cases
+        ]
         try:
-            judgments = self.agent._judge_relevance_batch(
-                [
-                    {"title": tc["title"], "summary": tc["summary"]}
-                    for tc in test_cases
-                ]
-            )
+            if self.agent._is_local:
+                # LOCAL model: there's no per-day quota to conserve, and a small
+                # model is far more accurate judging ONE article at a time (it
+                # gets the model's full attention plus the richer single-article
+                # prompt, which carries more few-shot examples than the batch
+                # prompt). Stapling 20 into one call made it lose calibration and
+                # miss obvious AI articles (recall 54%). The extra calls are free
+                # locally, so we spend them to buy accuracy.
+                judgments = [self.agent._judge_relevance(c) for c in cases]
+            else:
+                # HOSTED free tier: staple the whole set into ONE call so the
+                # entire evaluation fits inside a single per-DAY quota unit
+                # (20 separate calls would burn 20 units and 429 partway through).
+                judgments = self.agent._judge_relevance_batch(cases)
         except DailyQuotaExceeded:
             print(
                 "   🛑 Daily quota exhausted before any case could be graded. "
