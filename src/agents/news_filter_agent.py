@@ -257,6 +257,104 @@ Your JSON response:"""
                 "key_topics": [],
             }
 
+    def _judge_relevance_batch(self, articles: List[Dict]) -> List[Dict]:
+        """
+        Judge MANY articles in a SINGLE LLM call (one call, not one-per-article).
+
+        --------------------------------------------------------------------
+        REAL-WORLD PARALLEL: instead of handing the junior employee 20 articles
+        ONE AT A TIME (20 trips to their desk = 20 LLM calls = 20 units of the
+        daily quota), we hand over ALL 20 stapled together with the instruction
+        "number your answers 1..20". ONE trip. ONE quota unit. Same junior, same
+        grading rule — we only changed HOW MANY we ask per trip.
+        --------------------------------------------------------------------
+
+        The DECISION RULE / scoring / threshold here are IDENTICAL to
+        `_judge_relevance` — nothing about how an article is judged changes. The
+        only difference is batching, which is what lets the whole golden set fit
+        inside one free-tier daily quota (the ~per-day cap a throttle can't dodge).
+
+        Args:
+            articles: list of dicts, each with at least `title` and `summary`.
+
+        Returns:
+            A list the SAME length and order as `articles`. Each item has the
+            same shape `_judge_relevance` returns (relevant / relevance_score /
+            reasoning / key_topics / status). If the batch reply can't be parsed
+            into one verdict per article, raises so the caller stays honest
+            rather than inventing verdicts.
+        """
+        # Number every article so the model can line its answers up 1:1 with ours.
+        numbered = "\n\n".join(
+            f"[{i + 1}]\nTitle: {a['title']}\nSummary: {a.get('summary', '')}"
+            for i, a in enumerate(articles)
+        )
+
+        # Same decision rule + scoring guide as the single-article path — only the
+        # output shape changes (a JSON ARRAY, one object per numbered article).
+        prompt = f"""You are an expert AI/ML news analyst. For EACH numbered article below, decide whether it is genuinely ABOUT artificial intelligence / machine learning.
+
+DECISION RULE (read carefully):
+An article is relevant ONLY if its MAIN SUBJECT is AI/ML itself — its research, models, techniques, algorithms, or a direct application of AI/ML to solve a problem. A topic is NOT relevant merely because AI is built with it, runs on it, or could use it. General software, programming languages, databases, containers, cloud services, DevOps/CI tools, networking, and consumer hardware are NOT AI/ML topics — even though AI systems are commonly built on top of them. When an article is only infrastructure or tooling that *could* support AI, it is NOT relevant.
+
+Relevant AI/ML topics: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, Generative AI, Reinforcement Learning, AI Ethics/Safety, model releases and benchmarks.
+
+Scoring guide:
+- 8-10: core AI/ML — model releases, research, novel architectures or techniques.
+- 6-7: a clear real-world application of AI/ML, or AI governance/ethics.
+- 4-5: AI mentioned only in passing or tangentially.
+- 1-3: NOT about AI/ML — general software, infrastructure, hardware, or unrelated topics.
+Set "relevant" to true ONLY when the score is 6 or higher.
+
+ARTICLES:
+{numbered}
+
+Output ONLY a valid JSON ARRAY with EXACTLY {len(articles)} objects, in the SAME ORDER as the articles above. Each object MUST have this format:
+{{"relevant": true or false, "relevance_score": 1-10, "reasoning": "brief explanation", "key_topics": ["topic1", "topic2"]}}
+
+Do not include the article number inside the objects and do not add any text outside the JSON array.
+
+Your JSON array:"""
+
+        # One LLM call for the whole batch. DailyQuotaExceeded (the per-day cap)
+        # still bubbles straight up to the caller, exactly like the single path.
+        response = self._call_llm(prompt)
+
+        # The model may wrap the array in ```json fences — strip them if present.
+        json_text = response
+        if "```json" in response:
+            json_text = response.split("```json")[1].split("```")[0]
+        elif "```" in response:
+            json_text = response.split("```")[1].split("```")[0]
+
+        # Be forgiving about leading/trailing prose: slice from the first '[' to
+        # the last ']' so a stray sentence around the array doesn't break parsing.
+        text = json_text.strip()
+        start, end = text.find("["), text.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            text = text[start : end + 1]
+
+        judgments = json.loads(text)
+
+        # Measure-don't-trust: a batch reply is only usable if it gives EXACTLY
+        # one verdict per article in order. Anything else and we refuse to guess.
+        if not isinstance(judgments, list) or len(judgments) != len(articles):
+            raise ValueError(
+                f"Batch judge returned {len(judgments) if isinstance(judgments, list) else 'non-list'} "
+                f"verdict(s) for {len(articles)} article(s) — refusing to misalign them."
+            )
+
+        cleaned: List[Dict] = []
+        for j in judgments:
+            # Same minimal validation the single-article path does.
+            assert "relevant" in j
+            assert "relevance_score" in j
+            assert "reasoning" in j
+            j.setdefault("key_topics", [])
+            j["status"] = "judged"  # a real verdict we can trust
+            cleaned.append(j)
+        return cleaned
+
     async def _save_result(self, result: Dict[str, Any], output_path: str):
         """
         Save filtered articles to markdown.
