@@ -135,6 +135,50 @@ async def test_agent_keeps_ai_and_bins_non_ai():
 
 
 # ---------------------------------------------------------------------------
+# Keyword pre-filter — skip obviously-non-AI articles BEFORE spending an LLM call
+# ---------------------------------------------------------------------------
+
+
+def test_looks_ai_relevant_matches_ai_and_skips_non_ai():
+    """The cheap keyword check flags AI titles and ignores non-AI ones, with word
+    boundaries so 'ai' inside 'training' does NOT count as a match."""
+    agent = NewsFilterAgent()
+    assert agent._looks_ai_relevant({"title": "GPT-5 Released by OpenAI", "summary": ""})
+    assert agent._looks_ai_relevant({"title": "A new neural network", "summary": ""})
+    assert not agent._looks_ai_relevant(
+        {"title": "New JavaScript Framework", "summary": "A React alternative."}
+    )
+    # 'training' / 'email' must NOT trip the bare-'ai' pattern.
+    assert not agent._looks_ai_relevant(
+        {"title": "Email training for staff", "summary": "Office productivity tips."}
+    )
+
+
+@pytest.mark.asyncio
+async def test_prefilter_skips_non_ai_without_an_llm_call():
+    """With the pre-filter ON, a non-AI article is rejected up front and never
+    reaches the LLM (so it is neither output nor errored)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        input_file = Path(tmp) / "in.md"
+        input_file.write_text(SAMPLE_MD, encoding="utf-8")
+
+        agent = NewsFilterAgent()  # pre-filter ON by default
+        with patch.object(agent, "_call_llm", side_effect=_fake_llm) as mock_llm:
+            ctx = await agent._load_context(str(input_file))
+            result = await agent._process(ctx)
+
+        # GPT-5 (AI) judged and kept; JS article skipped before any LLM call.
+        assert result["total_output"] == 1
+        assert result["total_errored"] == 0
+        # The non-AI article never reached the LLM: every prompt sent was about
+        # the GPT-5 candidate, and none mentioned the JavaScript article.
+        prompts = [call.args[0] for call in mock_llm.call_args_list]
+        assert prompts  # the AI candidate WAS judged
+        assert all("JavaScript" not in p for p in prompts)
+        assert any("GPT-5" in p for p in prompts)
+
+
+# ---------------------------------------------------------------------------
 # E7 — honest error handling: a failed call is NOT a "not relevant" verdict
 # ---------------------------------------------------------------------------
 
@@ -170,6 +214,10 @@ async def test_error_is_set_aside_not_counted_as_rejection():
         input_file.write_text(SAMPLE_MD, encoding="utf-8")
 
         agent = NewsFilterAgent()
+        # Exercise the LLM error path for BOTH articles. The keyword pre-filter is
+        # an orthogonal optimization (covered by its own test); turn it off here so
+        # the non-AI article still reaches the LLM and lands in the errored bucket.
+        agent.use_keyword_prefilter = False
         # Patch the *process* step's judge call so we can inspect its return dict.
         with patch.object(
             agent, "_call_llm", side_effect=RuntimeError("429 rate limit")
@@ -199,6 +247,9 @@ async def test_daily_quota_stops_run_and_marks_remaining():
         input_file.write_text(SAMPLE_MD, encoding="utf-8")
 
         agent = NewsFilterAgent()
+        # Both articles must reach the LLM so the quota-stop marks them all; the
+        # keyword pre-filter (tested separately) would otherwise skip the non-AI one.
+        agent.use_keyword_prefilter = False
         with patch.object(
             agent,
             "_call_llm",
