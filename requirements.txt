@@ -6,12 +6,18 @@ aiohttp==3.11.10
 feedparser==6.0.11
 python-dateutil==2.9.0.post0
 
+# HTML scraping for GitHub Trending (Milestone 2 — OCP demo)
+beautifulsoup4==4.12.3
+
 # LLM provider abstraction (Milestone 3 onwards)
 # LiteLLM lets us call Anthropic, OpenAI, Gemini, etc. behind a single API.
 litellm==1.55.0
 
 # Model Context Protocol (Milestone 4)
 mcp==1.1.2
+
+# Async SQLite for the article database (Milestone 4)
+aiosqlite==0.22.1
 
 # Configuration
 python-dotenv==1.0.1

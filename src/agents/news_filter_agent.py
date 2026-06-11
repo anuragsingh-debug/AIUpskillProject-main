@@ -1,0 +1,571 @@
+"""Agent that filters AI-relevant articles."""
+
+import json
+from typing import Dict, Any, List
+from pathlib import Path
+from src.agents.base_agent import BaseAgent, DailyQuotaExceeded
+import re
+
+
+class NewsFilterAgent(BaseAgent):
+    """
+    Filters articles for AI/ML relevance.
+
+    Reads articles from markdown, uses LLM to judge relevance,
+    saves filtered articles.
+    """
+
+    # Cheap keyword pre-filter run BEFORE the LLM. On a local CPU model the cost
+    # is token generation, so the fastest optimization is simply to NOT ask the
+    # model about articles that obviously aren't AI/ML (a git rewrite, an npm
+    # release, an electric pickup...). Any article whose title/summary contains
+    # one of these signals is sent to the LLM for a real verdict; the rest are
+    # rejected up front. Short/ambiguous tokens use word boundaries so "ai" does
+    # NOT match "training"/"email" and "ml" does NOT match "html". The list is
+    # deliberately broad (recall over precision): a false POSITIVE just costs one
+    # extra LLM judgement, whereas a false NEGATIVE silently drops a real hit.
+    AI_KEYWORD_PATTERN = re.compile(
+        "|".join(
+            [
+                r"\ba\.?i\.?\b",
+                r"\bml\b",
+                r"machine[ -]?learning",
+                r"deep[ -]?learning",
+                r"neural",
+                r"\bllms?\b",
+                r"language model",
+                r"\bgpt\b",
+                r"claude",
+                r"gemini",
+                r"openai",
+                r"anthropic",
+                r"transformer",
+                r"\bagents?\b",
+                r"\bagentic\b",
+                r"computer vision",
+                r"opencv",
+                r"\bnlp\b",
+                r"embedding",
+                r"\brag\b",
+                r"fine[ -]?tun",
+                r"diffusion",
+                r"reinforcement",
+                r"generative",
+                r"chatbot",
+                r"\binference\b",
+                r"pytorch",
+                r"tensorflow",
+                r"hugging\s?face",
+                r"\bskills?\b",
+                r"dataset",
+                r"benchmark",
+                r"\bmodels?\b",
+            ]
+        ),
+        re.IGNORECASE,
+    )
+
+    def __init__(self, tools=None, **kwargs):
+        # Forward `tools` AND any BaseAgent options (requests_per_minute,
+        # max_calls_per_run, model, ...) up through this middle class — the E8
+        # lesson: a class in the middle of an inheritance chain must pass through
+        # every argument it doesn't itself consume.
+        super().__init__(tools=tools, **kwargs)
+        self.relevance_threshold = 6  # Out of 10
+
+        # How many articles to judge per LLM call. We judge in small CHUNKS
+        # rather than one-article-per-call (N slow round-trips that also burn a
+        # hosted daily quota fast) OR all-at-once (one giant array a small local
+        # model can't keep aligned — measured: a 3B model returned 33 verdicts
+        # for 64 articles). ~10 is the sweet spot: few calls, and an array short
+        # enough that the model still lines its answers up 1:1 with ours.
+        self.batch_size = 10
+
+        # When True, run the keyword pre-filter before spending any LLM calls.
+        # On a local CPU model this is the single biggest speedup; flip it off to
+        # have the LLM judge every article (slower, but no keyword blind spots).
+        self.use_keyword_prefilter = True
+
+    def _looks_ai_relevant(self, article: Dict) -> bool:
+        """Cheap, LLM-free check: does the title or summary mention anything
+        AI/ML-ish? Used to skip obviously-irrelevant articles before the LLM."""
+        haystack = f"{article.get('title', '')} {article.get('summary', '')}"
+        return bool(self.AI_KEYWORD_PATTERN.search(haystack))
+
+    async def _load_context(self, input_path: str) -> Dict[str, Any]:
+        """
+        Load articles from markdown file.
+
+        Args:
+            input_path: Path to markdown file with articles
+
+        Returns:
+            Dict with articles list
+        """
+        print(f"📖 Loading articles from {input_path}")
+
+        # Read markdown file
+        content = Path(input_path).read_text(encoding="utf-8")
+
+        # Parse articles (simple parsing)
+        articles = self._parse_markdown(content)
+
+        print(f"   Found {len(articles)} articles")
+        return {"articles": articles}
+
+    def _parse_markdown(self, content: str) -> List[Dict]:
+        """Parse markdown content to extract articles."""
+        articles = []
+
+        # Split by article separator
+        sections = content.split("---")
+
+        for section in sections:
+            if "##" not in section:
+                continue
+
+            # Extract title (line starting with ##)
+            title_match = re.search(r"## (.+)", section)
+            if not title_match:
+                continue
+
+            title = title_match.group(1).strip()
+
+            # Extract URL
+            url_match = re.search(r"\*\*URL:\*\* (.+)", section)
+            url = url_match.group(1).strip() if url_match else ""
+
+            # Extract summary (last paragraph). Skip metadata lines (**...**) AND
+            # markdown headings (#...): an HN-style article often has no body, and
+            # without excluding the heading the parser would grab the "## title"
+            # line itself as the summary — which then prints the title twice in the
+            # filtered output. Excluding headings leaves summary="" for bodyless
+            # articles, which _save_result then omits.
+            lines = [
+                ln
+                for ln in section.split("\n")
+                if ln.strip()
+                and not ln.startswith("**")
+                and not ln.lstrip().startswith("#")
+            ]
+            summary = lines[-1] if lines else ""
+
+            articles.append({"title": title, "url": url, "summary": summary})
+
+        return articles
+
+    async def _process(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Filter articles using LLM.
+
+        Args:
+            context: Dict with articles
+
+        Returns:
+            Dict with filtered articles and metadata
+        """
+        articles = context["articles"]
+        print(f"🔍 Filtering {len(articles)} articles...")
+
+        filtered = []
+        errored = []
+
+        # Pre-filter: drop articles with no AI/ML keyword BEFORE the LLM, so the
+        # model only judges plausible candidates. A skipped article is a real
+        # (heuristic) "not relevant" verdict — it is neither output nor errored,
+        # exactly like an article the LLM scores below the threshold.
+        if self.use_keyword_prefilter:
+            candidates = [a for a in articles if self._looks_ai_relevant(a)]
+            skipped = len(articles) - len(candidates)
+            print(
+                f"   ⚡ Keyword pre-filter: {len(candidates)} candidate(s) to judge, "
+                f"{skipped} auto-skipped (no AI/ML signal — saved ~{skipped} LLM judgements)"
+            )
+        else:
+            candidates = articles
+
+        stopped_early = False
+        # Walk the CANDIDATES in chunks of `self.batch_size` — one LLM call per
+        # chunk instead of one per article (a big cut in round-trips and, on a
+        # hosted tier, in quota spent).
+        for start in range(0, len(candidates), self.batch_size):
+            chunk = candidates[start : start + self.batch_size]
+            end = start + len(chunk)
+            # Local judges per-article (one call each); hosted batches the chunk
+            # into a single call. Say which so the log matches what really runs.
+            how = "one at a time" if self._is_local else "in one call"
+            print(f"   [{start + 1}-{end}/{len(candidates)}] judging {len(chunk)} {how}...")
+
+            # One batched call for the chunk, with an automatic per-article
+            # fallback if the reply can't be aligned (see _judge_chunk).
+            try:
+                judgments = self._judge_chunk(chunk)
+            except DailyQuotaExceeded as e:
+                # E9: the daily cap won't clear until reset — stop now and mark
+                # this chunk + every remaining candidate as un-judged (honest, E7),
+                # instead of firing more calls that would all 429.
+                remaining = candidates[start:]
+                print(
+                    f"   🛑 Daily quota hit — stopping. "
+                    f"{len(remaining)} article(s) left un-judged."
+                )
+                for art in remaining:
+                    errored.append(
+                        {**art, "error": str(e), "error_type": "daily_quota"}
+                    )
+                stopped_early = True
+                break
+
+            # Drop each verdict into the right bucket (same rules as before).
+            for article, judgment in zip(chunk, judgments):
+                # A failed call is NOT a verdict — we never got an answer, so it
+                # must not masquerade as "not relevant". Set it aside on its own.
+                if judgment["status"] == "error":
+                    errored.append(
+                        {
+                            **article,
+                            "error": judgment["error"],
+                            "error_type": judgment["error_type"],
+                        }
+                    )
+                    continue
+
+                if (
+                    judgment["relevant"]
+                    and judgment["relevance_score"] >= self.relevance_threshold
+                ):
+                    filtered.append(
+                        {
+                            **article,
+                            "relevance_score": judgment["relevance_score"],
+                            "reasoning": judgment["reasoning"],
+                            "key_topics": judgment.get("key_topics", []),
+                        }
+                    )
+                    print(
+                        f"      ✅ {article['title'][:45]} "
+                        f"(score: {judgment['relevance_score']})"
+                    )
+                else:
+                    print(
+                        f"      ❌ {article['title'][:45]} "
+                        f"(score: {judgment['relevance_score']})"
+                    )
+
+        judged = len(articles) - len(errored)
+        print(f"\n📊 Filtered: {len(filtered)}/{judged} judged articles relevant")
+        if errored:
+            print(
+                f"⚠️  {len(errored)} article(s) could not be judged "
+                f"(set aside, NOT counted as a verdict)"
+            )
+
+        return {
+            "filtered_articles": filtered,
+            "errored_articles": errored,
+            "total_input": len(articles),
+            "total_output": len(filtered),
+            "total_errored": len(errored),
+            "stopped_early": stopped_early,
+        }
+
+    def _judge_chunk(self, chunk: List[Dict]) -> List[Dict]:
+        """
+        Judge one chunk of articles in a SINGLE batched call, with a safety net.
+
+        Fast path: `_judge_relevance_batch` grades the whole chunk in one call.
+        If the model's reply can't be parsed or doesn't line up 1:1 with the
+        chunk (a small local model occasionally drops or merges an entry), we do
+        NOT throw the chunk away — we fall back to judging each article on its
+        own. Slower for that one chunk, but it always yields a verdict per
+        article. This is the same partial-failure resilience the fetcher uses
+        (A4): one bad batch must not sink the whole run.
+
+        DailyQuotaExceeded is deliberately NOT caught here — it bubbles up so
+        `_process` can stop the entire run (the per-day cap won't clear today).
+
+        Returns:
+            A list of verdicts the SAME length and order as `chunk`.
+        """
+        # A small LOCAL model judges most accurately ONE article at a time: the
+        # single-article prompt carries more few-shot examples, and the model
+        # keeps calibration far better than when ~10 articles are stapled into
+        # one call (measured: batch judging dropped local recall to ~54% and made
+        # it score obvious AI repos like "Apache Burr" as a 1). Local calls are
+        # free (no quota), so we spend the extra calls to buy accuracy. Crucially
+        # this is the SAME path the evaluator uses for local models, so the
+        # eval's report card now reflects what the pipeline actually does — they
+        # no longer diverge. Hosted tiers keep batching to conserve the daily cap.
+        if self._is_local:
+            return [self._judge_relevance(article) for article in chunk]
+        try:
+            return self._judge_relevance_batch(chunk)
+        except DailyQuotaExceeded:
+            raise  # let the caller stop the run; today's quota is spent
+        except Exception as e:
+            print(
+                f"      ⚠️ Batch reply unusable ({e}); "
+                f"judging this chunk one article at a time."
+            )
+            # Per-article fallback. _judge_relevance never raises for ordinary
+            # failures (it returns an error verdict), but it DOES re-raise
+            # DailyQuotaExceeded — which propagates up to _process as intended.
+            return [self._judge_relevance(article) for article in chunk]
+
+    def _judge_relevance(self, article: Dict) -> Dict:
+        """
+        Use LLM to judge article relevance.
+
+        Args:
+            article: Article dict with title, url, summary
+
+        Returns:
+            Dict with relevant, relevance_score, reasoning
+        """
+        prompt = f"""You are an expert AI/ML news analyst. Decide whether this article is genuinely ABOUT artificial intelligence / machine learning.
+
+Article:
+Title: {article['title']}
+Summary: {article['summary']}
+
+DECISION RULE (read carefully):
+An article is relevant ONLY if its MAIN SUBJECT is AI/ML itself — its research, models, techniques, algorithms, or a direct application of AI/ML to solve a problem. A topic is NOT relevant merely because AI is built with it, runs on it, or could use it. General software, programming languages, databases, containers, cloud services, DevOps/CI tools, networking, and consumer hardware are NOT AI/ML topics — even though AI systems are commonly built on top of them. When an article is only infrastructure or tooling that *could* support AI, it is NOT relevant.
+
+IMPORTANT — libraries and frameworks: a software library, framework, or tool whose PRIMARY PURPOSE is to DO AI/ML — for example a computer-vision library, an NLP toolkit, a neural-network / deep-learning framework, or a library for training, fine-tuning, or running models — IS relevant, because performing AI/ML is its very subject. Being "a library" or "a tool" does NOT make it mere infrastructure. Distinguish it from general infrastructure (containers, databases, CI, networking, storage) that merely hosts or supports AI.
+
+Relevant AI/ML topics: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, Generative AI, Reinforcement Learning, AI Ethics/Safety, model releases and benchmarks, and libraries/frameworks for any of these.
+
+Scoring guide:
+- 8-10: core AI/ML — model releases, research, novel architectures or techniques, or a library/framework whose purpose is AI/ML.
+- 6-7: a clear real-world application of AI/ML, or AI governance/ethics.
+- 4-5: AI mentioned only in passing or tangentially.
+- 1-3: NOT about AI/ML — general software, infrastructure, hardware, or unrelated topics.
+Set "relevant" to true ONLY when the score is 6 or higher.
+
+Output ONLY valid JSON with this exact format:
+{{
+  "relevant": true or false,
+  "relevance_score": 1-10,
+  "reasoning": "brief explanation",
+  "key_topics": ["topic1", "topic2"]
+}}
+
+Examples:
+- "Researchers train a neural network to translate sign language in real time" -> {{"relevant": true, "relevance_score": 9, "reasoning": "Applied deep learning / computer vision", "key_topics": ["Neural Networks", "Computer Vision"]}}
+- "Open-source library of reusable natural-language-processing components" -> {{"relevant": true, "relevance_score": 8, "reasoning": "An NLP library — performing AI/ML is its purpose", "key_topics": ["NLP"]}}
+- "Jenkins CI server adds new build pipeline plugins" -> {{"relevant": false, "relevance_score": 2, "reasoning": "DevOps tooling; may be used in ML ops but the article is not about AI", "key_topics": []}}
+- "Local bakery wins national pastry award" -> {{"relevant": false, "relevance_score": 1, "reasoning": "Unrelated to AI", "key_topics": []}}
+
+Your JSON response:"""
+
+        try:
+            response = self._call_llm(prompt)
+
+            # Extract JSON from response
+            # LLM might wrap in ```json or similar
+            json_text = response
+            if "```json" in response:
+                json_text = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                json_text = response.split("```")[1].split("```")[0]
+
+            judgment = json.loads(json_text.strip())
+
+            # Validate
+            assert "relevant" in judgment
+            assert "relevance_score" in judgment
+            assert "reasoning" in judgment
+
+            # The LLM actually answered — this is a real verdict we can trust.
+            judgment["status"] = "judged"
+            return judgment
+
+        except DailyQuotaExceeded:
+            # E9: do NOT swallow this as a per-article error — let it bubble up
+            # to _process so the whole run stops (the daily cap won't recover).
+            raise
+        except Exception as e:
+            # We never got a usable answer (rate limit / network / bad JSON).
+            # This is NOT a verdict — do NOT record score 0, which would be
+            # indistinguishable from a real "not AI" judgment. Mark it as an
+            # error so _process can set it aside instead of silently binning it.
+            msg = str(e)
+            lower = msg.lower()
+            is_rate_limit = (
+                "429" in msg
+                or "rate limit" in lower
+                or "ratelimit" in lower
+                or "quota" in lower
+                or "resource_exhausted" in lower
+            )
+            error_type = "rate_limit" if is_rate_limit else "error"
+            print(f"      ⚠️  Could not judge ({error_type}): {e}")
+            return {
+                "status": "error",
+                "error": msg,
+                "error_type": error_type,
+                "relevant": None,
+                "relevance_score": None,
+                "reasoning": f"Could not judge: {e}",
+                "key_topics": [],
+            }
+
+    def _judge_relevance_batch(self, articles: List[Dict]) -> List[Dict]:
+        """
+        Judge MANY articles in a SINGLE LLM call (one call, not one-per-article).
+
+        --------------------------------------------------------------------
+        REAL-WORLD PARALLEL: instead of handing the junior employee 20 articles
+        ONE AT A TIME (20 trips to their desk = 20 LLM calls = 20 units of the
+        daily quota), we hand over ALL 20 stapled together with the instruction
+        "number your answers 1..20". ONE trip. ONE quota unit. Same junior, same
+        grading rule — we only changed HOW MANY we ask per trip.
+        --------------------------------------------------------------------
+
+        The DECISION RULE / scoring / threshold here are IDENTICAL to
+        `_judge_relevance` — nothing about how an article is judged changes. The
+        only difference is batching, which is what lets the whole golden set fit
+        inside one free-tier daily quota (the ~per-day cap a throttle can't dodge).
+
+        Args:
+            articles: list of dicts, each with at least `title` and `summary`.
+
+        Returns:
+            A list the SAME length and order as `articles`. Each item has the
+            same shape `_judge_relevance` returns (relevant / relevance_score /
+            reasoning / key_topics / status). If the batch reply can't be parsed
+            into one verdict per article, raises so the caller stays honest
+            rather than inventing verdicts.
+        """
+        # Number every article so the model can line its answers up 1:1 with ours.
+        numbered = "\n\n".join(
+            f"[{i + 1}]\nTitle: {a['title']}\nSummary: {a.get('summary', '')}"
+            for i, a in enumerate(articles)
+        )
+
+        # Same decision rule + scoring guide as the single-article path — only the
+        # output shape changes (a JSON ARRAY, one object per numbered article).
+        prompt = f"""You are an expert AI/ML news analyst. For EACH numbered article below, decide whether it is genuinely ABOUT artificial intelligence / machine learning.
+
+DECISION RULE (read carefully):
+An article is relevant ONLY if its MAIN SUBJECT is AI/ML itself — its research, models, techniques, algorithms, or a direct application of AI/ML to solve a problem. A topic is NOT relevant merely because AI is built with it, runs on it, or could use it. General software, programming languages, databases, containers, cloud services, DevOps/CI tools, networking, and consumer hardware are NOT AI/ML topics — even though AI systems are commonly built on top of them. When an article is only infrastructure or tooling that *could* support AI, it is NOT relevant.
+
+IMPORTANT — libraries and frameworks: a software library, framework, or tool whose PRIMARY PURPOSE is to DO AI/ML — for example a computer-vision library, an NLP toolkit, a neural-network / deep-learning framework, or a library for training, fine-tuning, or running models — IS relevant, because performing AI/ML is its very subject. Being "a library" or "a tool" does NOT make it mere infrastructure. Distinguish it from general infrastructure (containers, databases, CI, networking, storage) that merely hosts or supports AI.
+
+Relevant AI/ML topics: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, Generative AI, Reinforcement Learning, AI Ethics/Safety, model releases and benchmarks, and libraries/frameworks for any of these.
+
+Scoring guide:
+- 8-10: core AI/ML — model releases, research, novel architectures or techniques, or a library/framework whose purpose is AI/ML.
+- 6-7: a clear real-world application of AI/ML, or AI governance/ethics.
+- 4-5: AI mentioned only in passing or tangentially.
+- 1-3: NOT about AI/ML — general software, infrastructure, hardware, or unrelated topics.
+Set "relevant" to true ONLY when the score is 6 or higher.
+
+ARTICLES:
+{numbered}
+
+Output ONLY a valid JSON ARRAY with EXACTLY {len(articles)} objects, in the SAME ORDER as the articles above. Each object MUST have this format:
+{{"relevant": true or false, "relevance_score": 1-10, "reasoning": "brief explanation", "key_topics": ["topic1", "topic2"]}}
+
+Do not include the article number inside the objects and do not add any text outside the JSON array.
+
+Your JSON array:"""
+
+        # One LLM call for the whole batch. DailyQuotaExceeded (the per-day cap)
+        # still bubbles straight up to the caller, exactly like the single path.
+        response = self._call_llm(prompt)
+
+        # The model may wrap the array in ```json fences — strip them if present.
+        json_text = response
+        if "```json" in response:
+            json_text = response.split("```json")[1].split("```")[0]
+        elif "```" in response:
+            json_text = response.split("```")[1].split("```")[0]
+
+        # Be forgiving about leading/trailing prose: slice from the first '[' to
+        # the last ']' so a stray sentence around the array doesn't break parsing.
+        text = json_text.strip()
+        start, end = text.find("["), text.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            text = text[start : end + 1]
+
+        judgments = json.loads(text)
+
+        # Measure-don't-trust: a batch reply is only usable if it gives EXACTLY
+        # one verdict per article in order. Anything else and we refuse to guess.
+        if not isinstance(judgments, list) or len(judgments) != len(articles):
+            raise ValueError(
+                f"Batch judge returned {len(judgments) if isinstance(judgments, list) else 'non-list'} "
+                f"verdict(s) for {len(articles)} article(s) — refusing to misalign them."
+            )
+
+        cleaned: List[Dict] = []
+        for j in judgments:
+            # Same minimal validation the single-article path does.
+            assert "relevant" in j
+            assert "relevance_score" in j
+            assert "reasoning" in j
+            j.setdefault("key_topics", [])
+            j["status"] = "judged"  # a real verdict we can trust
+            cleaned.append(j)
+        return cleaned
+
+    async def _save_result(self, result: Dict[str, Any], output_path: str):
+        """
+        Save filtered articles to markdown.
+
+        Args:
+            result: Dict with filtered_articles
+            output_path: Path to save markdown
+        """
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        articles = result["filtered_articles"]
+        errored = result.get("errored_articles", [])
+        total_input = result["total_input"]
+        # Filter rate is meaningful only over articles we actually judged.
+        judged = total_input - result.get("total_errored", 0)
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("# Filtered AI/ML Articles\n\n")
+            f.write(f"**Total Input:** {total_input}\n")
+            f.write(f"**Total Output:** {result['total_output']}\n")
+            f.write(f"**Could Not Judge:** {result.get('total_errored', 0)}\n")
+            filter_rate = (result["total_output"] / judged * 100) if judged else 0.0
+            f.write(f"**Filter Rate:** {filter_rate:.1f}% (of judged)\n\n")
+            f.write("---\n\n")
+
+            for article in articles:
+                f.write(f"## {article['title']}\n\n")
+                f.write(f"**URL:** {article['url']}\n")
+                f.write(f"**Relevance Score:** {article['relevance_score']}/10\n")
+                f.write(f"**Reasoning:** {article['reasoning']}\n")
+                f.write(f"**Key Topics:** {', '.join(article['key_topics'])}\n\n")
+                # HN-style articles often have no body text, so _parse_markdown
+                # falls back to the title as the "summary". Skip writing it then —
+                # otherwise the heading is printed twice and looks like a dupe.
+                summary = article.get("summary", "").strip()
+                if summary and summary != article["title"].strip():
+                    f.write(f"{summary}\n\n")
+                f.write("---\n\n")
+
+            # Honest trail: articles we never actually judged (rate limit / error),
+            # listed separately so they are not mistaken for "judged not relevant".
+            if errored:
+                f.write("## ⚠️ Could Not Be Judged\n\n")
+                f.write(
+                    "These were NOT judged (LLM error / rate limit) — neither kept "
+                    "nor rejected on merit. Re-run them after the quota resets:\n\n"
+                )
+                for article in errored:
+                    f.write(
+                        f"- **{article['title']}** "
+                        f"({article.get('error_type', 'error')}): "
+                        f"{article.get('error', '')}\n"
+                    )
+                f.write("\n---\n\n")
+
+        print(f"💾 Saved {len(articles)} filtered articles to {output_path}")
+        if errored:
+            print(f"   ⚠️  {len(errored)} could not be judged — listed in the report")

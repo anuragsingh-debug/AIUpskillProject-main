@@ -1,0 +1,151 @@
+{
+  "description": "REAL-WORLD evaluation set built from articles actually fetched by the pipeline on 2026-06-11 (data/articles/all_articles.md). Unlike golden_dataset.json (clean textbook headlines), these are messy live titles + descriptions — terse GitHub slugs, repo blurbs, HN posts. Labels are hand-assigned by the rule 'is the MAIN SUBJECT AI/ML itself?'. This set deliberately includes hard cases the curated set lacks, so the score reflects real performance instead of a flat 100%.",
+  "version": "1.0",
+  "created": "2026-06-11",
+  "test_cases": [
+    {
+      "id": 1,
+      "title": "Apache Burr: Build reliable AI agents and applications",
+      "summary": "A framework for building reliable AI agents and applications.",
+      "expected_relevant": true,
+      "expected_score": 8,
+      "reason": "Framework for building AI agents — subject is AI"
+    },
+    {
+      "id": 2,
+      "title": "harry0703/MoneyPrinterTurbo",
+      "summary": "Generate short videos with one click using AI LLM.",
+      "expected_relevant": true,
+      "expected_score": 8,
+      "reason": "Generative AI / LLM video generation"
+    },
+    {
+      "id": 3,
+      "title": "maziyarpanahi/openmed",
+      "summary": "open-source healthcare ai",
+      "expected_relevant": true,
+      "expected_score": 7,
+      "reason": "Healthcare AI models"
+    },
+    {
+      "id": 4,
+      "title": "roboflow/supervision",
+      "summary": "We write your reusable computer vision tools.",
+      "expected_relevant": true,
+      "expected_score": 9,
+      "reason": "Computer vision library — core AI/ML"
+    },
+    {
+      "id": 5,
+      "title": "FareedKhan-dev/train-llm-from-scratch",
+      "summary": "A straightforward method for training your LLM, from downloading data to generating text.",
+      "expected_relevant": true,
+      "expected_score": 9,
+      "reason": "Training an LLM — core AI/ML"
+    },
+    {
+      "id": 6,
+      "title": "Build a Basic AI Agent from Scratch: Long Task Planning",
+      "summary": "Tutorial on building an AI agent that does long-horizon task planning.",
+      "expected_relevant": true,
+      "expected_score": 8,
+      "reason": "Building an AI agent — subject is AI"
+    },
+    {
+      "id": 7,
+      "title": "mvanhorn/last30days-skill",
+      "summary": "AI agent skill that researches any topic across Reddit, X, YouTube, HN, Polymarket, and the web - then synthesizes a grounded summary.",
+      "expected_relevant": true,
+      "expected_score": 7,
+      "reason": "LLM-powered research agent application"
+    },
+    {
+      "id": 8,
+      "title": "apple/container",
+      "summary": "A tool for creating and running Linux containers using lightweight virtual machines on a Mac, written in Swift.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Containers / infrastructure, not AI"
+    },
+    {
+      "id": 9,
+      "title": "PgDog is funded and coming to a database near you",
+      "summary": "Funding announcement for a database product.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Database, not AI"
+    },
+    {
+      "id": 10,
+      "title": "Show HN: HelixDB - A graph database built on object storage",
+      "summary": "A graph database built on object storage.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Database, not AI"
+    },
+    {
+      "id": 11,
+      "title": "masterking32/MasterDnsVPN",
+      "summary": "Advanced DNS tunneling VPN for censorship bypass with low-overhead ARQ and resolver load balancing.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Networking / VPN, not AI"
+    },
+    {
+      "id": 12,
+      "title": "soxoj/maigret",
+      "summary": "Collect a dossier on a person by username from 3000+ sites.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "OSINT tool, not AI"
+    },
+    {
+      "id": 13,
+      "title": "Web Browsers on Video Game Consoles",
+      "summary": "A look at web browsers available on game consoles.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "General tech, not AI"
+    },
+    {
+      "id": 14,
+      "title": "Linux latency measurements and compositor tuning",
+      "summary": "Measuring Linux latency and tuning the compositor.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Systems / Linux, not AI"
+    },
+    {
+      "id": 15,
+      "title": "refactoringhq/tolaria",
+      "summary": "Desktop app to manage markdown knowledge bases.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Productivity app, not AI"
+    },
+    {
+      "id": 16,
+      "title": "Raspberry Pi 5 - 16GB RAM",
+      "summary": "New Raspberry Pi 5 board with 16GB of RAM.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Consumer hardware, not AI"
+    },
+    {
+      "id": 17,
+      "title": "CSS: Unavoidable Bad Parts",
+      "summary": "An article on problematic parts of CSS.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Web development, not AI"
+    },
+    {
+      "id": 18,
+      "title": "piFS",
+      "summary": "A filesystem that stores your data in the digits of pi.",
+      "expected_relevant": false,
+      "expected_score": 1,
+      "reason": "Filesystem joke project, not AI"
+    }
+  ]
+}

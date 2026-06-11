@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>AI News Pipeline — Project Report</title>
+<style>
+  :root{
+    --ink:#1d2433; --muted:#5b6675; --line:#dfe3ea;
+    --blue:#3a6df0; --green:#1f9d57; --amber:#d68a00; --red:#d23b3b; --purple:#7b54d6;
+    --bg-soft:#f4f7ff;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif; line-height:1.55; }
+  /* page model */
+  .page{ width:210mm; min-height:296mm; padding:18mm 16mm; margin:0 auto; background:#fff;
+    page-break-after:always; position:relative; }
+  .page:last-child{ page-break-after:auto; }
+  h1,h2,h3{ line-height:1.2; }
+  h1{ font-size:30px; margin:0 0 6px; }
+  h2{ font-size:21px; margin:26px 0 10px; color:var(--blue); border-bottom:2px solid var(--line); padding-bottom:6px; }
+  h3{ font-size:15px; margin:16px 0 6px; }
+  p{ margin:8px 0; }
+  .muted{ color:var(--muted); }
+  .small{ font-size:12.5px; }
+  ul{ margin:8px 0 8px 0; padding-left:20px; }
+  li{ margin:5px 0; }
+  code{ background:#eef1f7; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+  .tag{ display:inline-block; font-size:11px; padding:2px 8px; border-radius:99px;
+    background:var(--bg-soft); color:var(--blue); margin-right:4px; }
+  .callout{ background:var(--bg-soft); border-left:4px solid var(--blue); padding:10px 14px; border-radius:6px; margin:12px 0; }
+  .callout.good{ background:#eafaf0; border-color:var(--green); }
+  .callout.warn{ background:#fff6e6; border-color:var(--amber); }
+  table{ width:100%; border-collapse:collapse; margin:10px 0; font-size:13px; }
+  th,td{ border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th{ background:var(--bg-soft); }
+  .pill{ font-weight:700; }
+
+  /* cover */
+  .cover{ display:flex; flex-direction:column; justify-content:center; height:260mm; text-align:center; }
+  .cover .logo{ font-size:64px; }
+  .cover h1{ font-size:40px; margin-top:10px; }
+  .cover .tagline{ font-size:17px; color:var(--muted); margin-top:6px; }
+  .cover .meta{ margin-top:40px; font-size:14px; color:var(--muted); }
+  .cover .chips{ margin-top:26px; }
+  .cover .chip{ display:inline-block; margin:4px; padding:6px 14px; border:1px solid var(--line);
+    border-radius:99px; font-size:13px; }
+
+  /* numbered workflow steps */
+  .step{ display:flex; gap:14px; margin:12px 0; align-items:flex-start; }
+  .step .n{ flex:none; width:34px; height:34px; border-radius:50%; background:var(--blue); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:700; }
+  .step .b h3{ margin:2px 0 2px; }
+  .step .b .how{ font-size:13px; color:var(--muted); }
+
+  /* mind map */
+  .mm-root{ text-align:center; margin:6px 0 16px; }
+  .mm-root .center{ display:inline-block; background:var(--ink); color:#fff; font-weight:700;
+    padding:12px 22px; border-radius:12px; font-size:16px; }
+  .mm-branches{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+  .mm{ border:1px solid var(--line); border-top:4px solid var(--blue); border-radius:10px; padding:12px 14px; }
+  .mm.b1{ border-top-color:var(--blue);} .mm.b2{ border-top-color:var(--green);}
+  .mm.b3{ border-top-color:var(--amber);} .mm.b4{ border-top-color:var(--red);}
+  .mm.b5{ border-top-color:var(--purple);} .mm.b6{ border-top-color:#0aa;}
+  .mm h3{ margin:0 0 6px; }
+  .mm ul{ margin:0; padding-left:18px; }
+  .mm li{ font-size:12.5px; }
+
+  /* challenge cards */
+  .ch{ border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:10px 0; }
+  .ch .t{ font-weight:700; }
+  .ch .row{ font-size:13px; margin:3px 0; }
+  .ch .row b{ color:var(--blue); }
+
+  .foot{ position:absolute; bottom:10mm; left:16mm; right:16mm; display:flex; justify-content:space-between;
+    font-size:11px; color:var(--muted); border-top:1px solid var(--line); padding-top:6px; }
+
+  @media print{
+    .page{ margin:0; box-shadow:none; }
+    @page{ size:A4; margin:0; }
+  }
+  @media screen{
+    body{ background:#5a5f6a; padding:20px 0; }
+    .page{ box-shadow:0 6px 24px rgba(0,0,0,.3); margin-bottom:20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="page">
+  <div class="cover">
+    <div class="logo">🤖📰</div>
+    <h1>AI News Pipeline</h1>
+    <div class="tagline">A multi-agent system that reads the tech news for you,<br/>keeps only the AI stories, and writes you a newsletter.</div>
+    <div class="chips">
+      <span class="chip">🐍 Python</span>
+      <span class="chip">⚡ Async</span>
+      <span class="chip">🧱 SOLID + Patterns</span>
+      <span class="chip">🤖 AI Agents</span>
+      <span class="chip">🔌 MCP</span>
+      <span class="chip">📊 Evaluation</span>
+    </div>
+    <div class="meta">
+      Final Project Report &nbsp;·&nbsp; AI Upskilling Program (5 weeks, 6 milestones)<br/>
+      Anurag Kumar Singh &nbsp;·&nbsp; 2026-06-09<br/>
+      <span class="small">Written in plain language so anyone can follow it.</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PLAIN ENGLISH + WORKFLOW ============ -->
+<section class="page">
+  <h1>1 · What is this project, in plain English?</h1>
+  <p>Every day there is <b>far too much</b> technology news to read. This project is a small team of
+  <b>automated helpers (“agents”)</b> that does the reading for you and hands back a short, tidy
+  newsletter containing <b>only</b> the Artificial-Intelligence stories.</p>
+
+  <div class="callout">
+    <b>One-line summary:</b> it <b>fetches</b> news → <b>stores</b> it → an AI <b>decides what’s
+    relevant</b> → it <b>summarizes</b> the keepers → it <b>writes a newsletter</b> → and finally it
+    <b>grades its own accuracy</b>.
+  </div>
+
+  <h3>A few words explained simply</h3>
+  <table>
+    <tr><th>Word</th><th>What it really means</th></tr>
+    <tr><td><b>LLM</b></td><td>The “brain” — an AI language model (like the one behind chatbots) that reads text and answers.</td></tr>
+    <tr><td><b>Agent</b></td><td>A small program that gives the AI brain one job and a clear routine (load → think → save).</td></tr>
+    <tr><td><b>MCP</b></td><td>A standard “plug” that lets agents use tools (here: a database) without knowing the messy details.</td></tr>
+    <tr><td><b>Async</b></td><td>Doing many slow things (web requests) <i>at the same time</i> instead of one-by-one, so it’s fast.</td></tr>
+    <tr><td><b>Golden dataset</b></td><td>A small answer-key of hand-labeled examples used to test how accurate the AI is.</td></tr>
+  </table>
+
+  <h1 style="margin-top:24px">2 · The full workflow (step by step)</h1>
+
+  <div class="step"><div class="n">1</div><div class="b">
+    <h3>📰 Fetch — gather the news</h3>
+    <div class="how">Pulls articles from 3 places at once (HackerNews, RSS feeds, GitHub Trending).
+    Like sending 3 helpers to 3 newsstands simultaneously instead of one after another.</div></div></div>
+
+  <div class="step"><div class="n">2</div><div class="b">
+    <h3>💾 Store — save into a database</h3>
+    <div class="how">All articles go into a small SQLite database, reachable through an <b>MCP</b> tool —
+    so any agent can later ask “find me articles about X”.</div></div></div>
+
+  <div class="step"><div class="n">3</div><div class="b">
+    <h3>🔍 Filter — the AI decides what matters</h3>
+    <div class="how">The AI reads each article and gives it a relevance score 0–10. Score 6 or more =
+    <b>keep</b>; below 6 = <b>bin</b>. This is the heart of the project.</div></div></div>
+
+  <div class="step"><div class="n">4</div><div class="b">
+    <h3>📝 Summarize — group &amp; shorten</h3>
+    <div class="how">The kept articles are grouped by topic (LLMs, Computer Vision, …) and each group
+    is summarized into a couple of clear sentences.</div></div></div>
+
+  <div class="step"><div class="n">5</div><div class="b">
+    <h3>✍️ Write — produce the newsletter</h3>
+    <div class="how">A writer agent turns those summaries into a friendly, readable daily digest you
+    can actually enjoy reading.</div></div></div>
+
+  <div class="step"><div class="n">6</div><div class="b">
+    <h3>🧪 Evaluate — grade its own accuracy</h3>
+    <div class="how">Finally it tests the filter against an answer-key and reports how often it was
+    right (accuracy, precision, recall, F1).</div></div></div>
+
+  <div class="foot"><span>AI News Pipeline — Final Report</span><span>Page 2</span></div>
+</section>
+
+<!-- ============ MIND MAP ============ -->
+<section class="page">
+  <h1>3 · Mind map — the whole project on one page</h1>
+  <p class="muted small">Start in the middle, then read each branch.</p>
+
+  <div class="mm-root"><span class="center">🤖 AI NEWS PIPELINE</span></div>
+
+  <div class="mm-branches">
+    <div class="mm b1">
+      <h3>① What it does</h3>
+      <ul>
+        <li>Reads tech news from 3 sources</li>
+        <li>Keeps only AI/ML stories</li>
+        <li>Summarizes &amp; writes a newsletter</li>
+        <li>Grades its own accuracy</li>
+      </ul>
+    </div>
+    <div class="mm b2">
+      <h3>② How it’s built</h3>
+      <ul>
+        <li>Python + Async (fast, parallel)</li>
+        <li>Clean design: SOLID + patterns</li>
+        <li>4 AI agents on one shared base</li>
+        <li>MCP database tool + LiteLLM brain</li>
+      </ul>
+    </div>
+    <div class="mm b3">
+      <h3>③ The 6 milestones</h3>
+      <ul>
+        <li>M0 setup · M1 fetcher · M2 SOLID</li>
+        <li>M3 first AI agent + tools</li>
+        <li>M4 MCP + multi-agent pipeline</li>
+        <li>M5 evaluation + docs</li>
+      </ul>
+    </div>
+    <div class="mm b4">
+      <h3>④ Biggest challenges</h3>
+      <ul>
+        <li>A crash that was really just emoji</li>
+        <li>AI silently dropping good articles</li>
+        <li>Two stacked free-tier limits</li>
+        <li>Buggy copied tutorial code</li>
+      </ul>
+    </div>
+    <div class="mm b5">
+      <h3>⑤ Results</h3>
+      <ul>
+        <li>40+ tests, all offline · ruff clean</li>
+        <li>Filter: 90% → <b>100%</b> accuracy</li>
+        <li>F1 0.923 → <b>1.000</b></li>
+        <li>Zero-edit proofs of clean design</li>
+      </ul>
+    </div>
+    <div class="mm b6">
+      <h3>⑥ Honesty</h3>
+      <ul>
+        <li>100% is on 20 cases (small set)</li>
+        <li>Free quota limits live runs</li>
+        <li>1 flaky timing test (documented)</li>
+        <li>No quota “cheating” (key rotation)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout good" style="margin-top:16px">
+    <b>The takeaway in one sentence:</b> a clean, well-tested AI system that reads the news, keeps the
+    AI stories, writes a newsletter — and is honest about exactly how good (and how limited) it is.
+  </div>
+
+  <div class="foot"><span>AI News Pipeline — Final Report</span><span>Page 3</span></div>
+</section>
+
+<!-- ============ HOW IT'S BUILT ============ -->
+<section class="page">
+  <h1>4 · How it’s built (without the jargon)</h1>
+
+  <h2>The shape of the system</h2>
+  <pre class="small" style="background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto">
+ News sources            Storage              AI agents               Output
+ ┌───────────┐         ┌──────────┐       ┌───────────────┐
+ │HackerNews │  fetch  │ Database │       │ Filter agent  │   📄 newsletter
+ │RSS feeds  │ ──────► │  (MCP    │  ───► │ Summarizer    │ ► 📊 evaluation
+ │GitHub     │         │  tool)   │       │ Writer        │      report
+ └───────────┘         └──────────┘       └───────────────┘
+
+   Fetch → Store → Filter → Summarize → Write → Evaluate
+  </pre>
+
+  <h2>The three ideas that make it “clean”</h2>
+  <h3>1. One routine, many workers (Template Method)</h3>
+  <p>Every fetcher and every agent follows the <b>same fixed routine</b> — load, do the work, save.
+  Only the “do the work” part changes. So adding a new agent means filling in one blank, not
+  redesigning anything.</p>
+
+  <h3>2. Add new things without breaking old things (Open/Closed)</h3>
+  <p class="muted">Proof, not a promise:</p>
+  <ul>
+    <li>Adding a brand-new news source (GitHub) took <b>1 new file and 0 edits</b> to existing code.</li>
+    <li>Switching where data is saved (markdown → JSON) was a <b>1-line</b> change.</li>
+  </ul>
+
+  <h3>3. Don’t marry one AI company (provider-agnostic)</h3>
+  <p>All AI calls go through one library (<b>LiteLLM</b>). Switching between Google Gemini, Anthropic
+  Claude, or OpenAI is a <b>one-line setting change</b> — no code rewrite.</p>
+
+  <div class="callout">
+    <b>Why this matters:</b> the boring “clean design” work in week 2 is exactly what made weeks 3–5
+    (the AI parts) quick and safe to build. Good foundations pay off later.
+  </div>
+
+  <div class="foot"><span>AI News Pipeline — Final Report</span><span>Page 4</span></div>
+</section>
+
+<!-- ============ CHALLENGES & STRATEGIES ============ -->
+<section class="page">
+  <h1>5 · Challenges &amp; strategies (in simple language)</h1>
+  <p class="muted">For each: what went wrong → why it was a problem → what I did → the result.</p>
+
+  <div class="ch">
+    <div class="t">🐞 1. A “crash” that wasn’t really a crash</div>
+    <div class="row"><b>Problem:</b> the very first AI run looked like it crashed on Windows.</div>
+    <div class="row"><b>Why it mattered:</b> it seemed the AI had failed — but it actually worked fine.</div>
+    <div class="row"><b>What I did:</b> read the error carefully — Windows just couldn’t <i>print</i> an
+      emoji in the reply. Told the program to use UTF-8 text.</div>
+    <div class="row"><b>Result:</b> fixed in one place. <b>Lesson: “the AI failed” and “printing the
+      answer failed” look identical — check which one it really is.</b></div>
+  </div>
+
+  <div class="ch">
+    <div class="t">🕵️ 2. The AI was silently throwing away good articles</div>
+    <div class="row"><b>Problem:</b> a run said “7 of 43 relevant” and looked successful — but 32 had
+      actually hit a “too many requests” limit and were wrongly marked “not relevant”.</div>
+    <div class="row"><b>Why it mattered:</b> the worst kind of bug — the program looks fine while the
+      <i>data is wrong</i>. Good AI stories were dropped for a traffic reason, not a content reason.</div>
+    <div class="row"><b>What I did:</b> (1) slow the requests down to stay under the limit; (2) treat a
+      failed request as “couldn’t judge”, never as a “no”.</div>
+    <div class="row"><b>Result:</b> results are now trustworthy. <b>Lesson: an error is not a verdict.</b></div>
+  </div>
+
+  <div class="ch">
+    <div class="t">🚧 3. Two different “limits” on the free AI plan</div>
+    <div class="row"><b>Problem:</b> after fixing the per-minute limit, runs still failed — there was
+      also a <b>per-day</b> limit (~20 calls/day).</div>
+    <div class="row"><b>Why it mattered:</b> slowing down can beat a per-minute limit, but nothing beats
+      a per-day limit except waiting.</div>
+    <div class="row"><b>What I did:</b> detect the daily limit, <b>stop cleanly</b>, and clearly mark the
+      un-checked items — instead of firing dozens of doomed requests.</div>
+    <div class="row"><b>Result:</b> graceful behaviour at the wall. <b>Lesson: read <i>which</i> limit you
+      hit — they need different fixes.</b></div>
+  </div>
+
+  <div class="ch">
+    <div class="t">📋 4. Copied tutorial code was buggy</div>
+    <div class="row"><b>Problem:</b> example code from tutorials had real mistakes (wrong import names,
+      missing pieces).</div>
+    <div class="row"><b>What I did:</b> run everything immediately and use automatic checkers
+      (<code>ruff</code> + <code>pytest</code>) to catch problems early.</div>
+    <div class="row"><b>Result:</b> bugs caught before they spread. <b>Lesson: never trust copied code —
+      run it and test it.</b></div>
+  </div>
+
+  <div class="ch">
+    <div class="t">🎯 5. Making the score real, not “cheated” (the key one)</div>
+    <div class="row"><b>Problem:</b> the AI wrongly kept a “Docker” story (a tool, not AI). Easy fix =
+      tell it “Docker = no”… but that’s <b>memorising the test answers</b>.</div>
+    <div class="row"><b>What I did:</b> taught it a <b>general rule</b> instead (“must be <i>about</i> AI,
+      not just <i>used with</i> AI”) and tested on <b>new</b> trick cases it had never seen.</div>
+    <div class="row"><b>Result:</b> it got <b>all</b> the new tricks right too — a real improvement, not
+      a memorised one. <b>Lesson: a high score only counts if it works on unseen examples.</b></div>
+  </div>
+
+  <div class="foot"><span>AI News Pipeline — Final Report</span><span>Page 5</span></div>
+</section>
+
+<!-- ============ EVALUATION ============ -->
+<section class="page">
+  <h1>6 · Did it actually work? (Evaluation)</h1>
+
+  <p>To prove the filter is good — not just claim it — it was tested against a hand-made
+  <b>answer-key</b> of example articles, each already labeled “AI” or “not AI”. Four simple scores:</p>
+
+  <table>
+    <tr><th>Score</th><th>Plain meaning</th></tr>
+    <tr><td><b>Accuracy</b></td><td>Out of all articles, how many did it get right?</td></tr>
+    <tr><td><b>Precision</b></td><td>When it says “this is AI”, how often is it correct?</td></tr>
+    <tr><td><b>Recall</b></td><td>Of all the real AI articles, how many did it catch?</td></tr>
+    <tr><td><b>F1</b></td><td>One number combining precision &amp; recall (1.000 = perfect).</td></tr>
+  </table>
+
+  <h2>Before → After (the improvement)</h2>
+  <table>
+    <tr><th>Metric</th><th>Before (10 cases)</th><th>After (20 cases, better prompt)</th></tr>
+    <tr><td>Accuracy</td><td>90.0%</td><td class="pill" style="color:var(--green)">100%</td></tr>
+    <tr><td>Precision</td><td>85.7%</td><td class="pill" style="color:var(--green)">100%</td></tr>
+    <tr><td>Recall</td><td>100%</td><td class="pill" style="color:var(--green)">100%</td></tr>
+    <tr><td>F1 score</td><td>0.923</td><td class="pill" style="color:var(--green)">1.000</td></tr>
+  </table>
+
+  <div class="callout good">
+    <b>The one mistake, fixed:</b> a “Docker” release was wrongly kept (score 6) because “Docker is used
+    to run AI”. After teaching the general rule, it correctly rejected it (score 2) — and rejected
+    5 brand-new tricky non-AI items (Kubernetes, a gaming graphics card, cloud storage, Rust, Kafka)
+    it had never seen. That’s why we trust the improvement.
+  </div>
+
+  <div class="callout warn">
+    <b>Being honest about the number:</b> 100% is on a small test of 20 examples, and the free AI model
+    varies a little run-to-run. The fair claim is: <i>“the main mistake was fixed with a rule that
+    worked on unseen examples,”</i> not “perfect forever.”
+  </div>
+
+  <div class="foot"><span>AI News Pipeline — Final Report</span><span>Page 6</span></div>
+</section>
+
+<!-- ============ HONESTY + CONCLUSION ============ -->
+<section class="page">
+  <h1>7 · Honest notes &amp; what’s next</h1>
+
+  <h3>Things I’m deliberately open about</h3>
+  <ul>
+    <li><b>Small test set:</b> 20 examples is enough to prove the fix, but a bigger answer-key would be
+      even stronger.</li>
+    <li><b>Free-plan limits:</b> the free AI plan caps how many checks can run per day — a cost limit,
+      not a code problem.</li>
+    <li><b>One flaky test:</b> a speed-based test sometimes fails depending on the network. It’s
+      documented with a fix plan, not hidden.</li>
+    <li><b>No shortcuts:</b> a trick to dodge the free limit (rotating multiple keys) was tried and then
+      fully removed, on a senior’s guidance.</li>
+  </ul>
+
+  <h3>What I’d do next</h3>
+  <ul>
+    <li>Add more news sources (easy — 1 file each, thanks to the clean design).</li>
+    <li>Grow the answer-key and re-test regularly.</li>
+    <li>Save past AI judgments so re-runs are cheap and fast.</li>
+    <li>Build a live web page on top of the real pipeline.</li>
+  </ul>
+
+  <h1 style="margin-top:24px">8 · Conclusion</h1>
+  <p>This project is a complete, tested, multi-step AI system that <b>reads the news, keeps the AI
+  stories, writes a newsletter, and checks its own accuracy</b>. It’s built on clean foundations whose
+  flexibility is <b>proven</b> (new source = 1 file; new storage = 1 line), and its quality is
+  <b>measured</b>, improving the filter from 90% to a verified 100% — honestly, without gaming the test.</p>
+
+  <div class="callout">
+    <b>The habits that matter most</b> — trust nothing you copied, an error is not a verdict, read which
+    limit you hit, and document your open issues — are the habits of a real AI engineer, not just
+    someone following a tutorial.
+  </div>
+
+  <p class="small muted" style="margin-top:24px">Companion documents in the project repository:
+  <code>docs/work-log.md</code> (dated trail), <code>docs/design-decisions.md</code> (architecture),
+  <code>docs/challenges-and-strategies.md</code> (full challenge list),
+  <code>docs/architecture.md</code>, <code>docs/deployment.md</code>, and an interactive
+  <code>demo/</code> that replays the whole pipeline in a browser.</p>
+
+  <div class="foot"><span>AI News Pipeline — Final Report · Anurag Kumar Singh</span><span>Page 7</span></div>
+</section>
+
+</body>
+</html>
