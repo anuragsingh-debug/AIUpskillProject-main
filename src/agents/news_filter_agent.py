@@ -135,11 +135,18 @@ class NewsFilterAgent(BaseAgent):
             url_match = re.search(r"\*\*URL:\*\* (.+)", section)
             url = url_match.group(1).strip() if url_match else ""
 
-            # Extract summary (last paragraph)
+            # Extract summary (last paragraph). Skip metadata lines (**...**) AND
+            # markdown headings (#...): an HN-style article often has no body, and
+            # without excluding the heading the parser would grab the "## title"
+            # line itself as the summary — which then prints the title twice in the
+            # filtered output. Excluding headings leaves summary="" for bodyless
+            # articles, which _save_result then omits.
             lines = [
                 ln
                 for ln in section.split("\n")
-                if ln.strip() and not ln.startswith("**")
+                if ln.strip()
+                and not ln.startswith("**")
+                and not ln.lstrip().startswith("#")
             ]
             summary = lines[-1] if lines else ""
 
@@ -184,7 +191,10 @@ class NewsFilterAgent(BaseAgent):
         for start in range(0, len(candidates), self.batch_size):
             chunk = candidates[start : start + self.batch_size]
             end = start + len(chunk)
-            print(f"   [{start + 1}-{end}/{len(candidates)}] judging {len(chunk)} in one call...")
+            # Local judges per-article (one call each); hosted batches the chunk
+            # into a single call. Say which so the log matches what really runs.
+            how = "one at a time" if self._is_local else "in one call"
+            print(f"   [{start + 1}-{end}/{len(candidates)}] judging {len(chunk)} {how}...")
 
             # One batched call for the chunk, with an automatic per-article
             # fallback if the reply can't be aligned (see _judge_chunk).
@@ -277,6 +287,17 @@ class NewsFilterAgent(BaseAgent):
         Returns:
             A list of verdicts the SAME length and order as `chunk`.
         """
+        # A small LOCAL model judges most accurately ONE article at a time: the
+        # single-article prompt carries more few-shot examples, and the model
+        # keeps calibration far better than when ~10 articles are stapled into
+        # one call (measured: batch judging dropped local recall to ~54% and made
+        # it score obvious AI repos like "Apache Burr" as a 1). Local calls are
+        # free (no quota), so we spend the extra calls to buy accuracy. Crucially
+        # this is the SAME path the evaluator uses for local models, so the
+        # eval's report card now reflects what the pipeline actually does — they
+        # no longer diverge. Hosted tiers keep batching to conserve the daily cap.
+        if self._is_local:
+            return [self._judge_relevance(article) for article in chunk]
         try:
             return self._judge_relevance_batch(chunk)
         except DailyQuotaExceeded:
@@ -310,10 +331,12 @@ Summary: {article['summary']}
 DECISION RULE (read carefully):
 An article is relevant ONLY if its MAIN SUBJECT is AI/ML itself — its research, models, techniques, algorithms, or a direct application of AI/ML to solve a problem. A topic is NOT relevant merely because AI is built with it, runs on it, or could use it. General software, programming languages, databases, containers, cloud services, DevOps/CI tools, networking, and consumer hardware are NOT AI/ML topics — even though AI systems are commonly built on top of them. When an article is only infrastructure or tooling that *could* support AI, it is NOT relevant.
 
-Relevant AI/ML topics: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, Generative AI, Reinforcement Learning, AI Ethics/Safety, model releases and benchmarks.
+IMPORTANT — libraries and frameworks: a software library, framework, or tool whose PRIMARY PURPOSE is to DO AI/ML — for example a computer-vision library, an NLP toolkit, a neural-network / deep-learning framework, or a library for training, fine-tuning, or running models — IS relevant, because performing AI/ML is its very subject. Being "a library" or "a tool" does NOT make it mere infrastructure. Distinguish it from general infrastructure (containers, databases, CI, networking, storage) that merely hosts or supports AI.
+
+Relevant AI/ML topics: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, Generative AI, Reinforcement Learning, AI Ethics/Safety, model releases and benchmarks, and libraries/frameworks for any of these.
 
 Scoring guide:
-- 8-10: core AI/ML — model releases, research, novel architectures or techniques.
+- 8-10: core AI/ML — model releases, research, novel architectures or techniques, or a library/framework whose purpose is AI/ML.
 - 6-7: a clear real-world application of AI/ML, or AI governance/ethics.
 - 4-5: AI mentioned only in passing or tangentially.
 - 1-3: NOT about AI/ML — general software, infrastructure, hardware, or unrelated topics.
@@ -329,6 +352,7 @@ Output ONLY valid JSON with this exact format:
 
 Examples:
 - "Researchers train a neural network to translate sign language in real time" -> {{"relevant": true, "relevance_score": 9, "reasoning": "Applied deep learning / computer vision", "key_topics": ["Neural Networks", "Computer Vision"]}}
+- "Open-source library of reusable natural-language-processing components" -> {{"relevant": true, "relevance_score": 8, "reasoning": "An NLP library — performing AI/ML is its purpose", "key_topics": ["NLP"]}}
 - "Jenkins CI server adds new build pipeline plugins" -> {{"relevant": false, "relevance_score": 2, "reasoning": "DevOps tooling; may be used in ML ops but the article is not about AI", "key_topics": []}}
 - "Local bakery wins national pastry award" -> {{"relevant": false, "relevance_score": 1, "reasoning": "Unrelated to AI", "key_topics": []}}
 
@@ -426,10 +450,12 @@ Your JSON response:"""
 DECISION RULE (read carefully):
 An article is relevant ONLY if its MAIN SUBJECT is AI/ML itself — its research, models, techniques, algorithms, or a direct application of AI/ML to solve a problem. A topic is NOT relevant merely because AI is built with it, runs on it, or could use it. General software, programming languages, databases, containers, cloud services, DevOps/CI tools, networking, and consumer hardware are NOT AI/ML topics — even though AI systems are commonly built on top of them. When an article is only infrastructure or tooling that *could* support AI, it is NOT relevant.
 
-Relevant AI/ML topics: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, Generative AI, Reinforcement Learning, AI Ethics/Safety, model releases and benchmarks.
+IMPORTANT — libraries and frameworks: a software library, framework, or tool whose PRIMARY PURPOSE is to DO AI/ML — for example a computer-vision library, an NLP toolkit, a neural-network / deep-learning framework, or a library for training, fine-tuning, or running models — IS relevant, because performing AI/ML is its very subject. Being "a library" or "a tool" does NOT make it mere infrastructure. Distinguish it from general infrastructure (containers, databases, CI, networking, storage) that merely hosts or supports AI.
+
+Relevant AI/ML topics: Machine Learning, LLMs, Neural Networks, Computer Vision, NLP, AI Research, AI Applications, Deep Learning, Transformers, Generative AI, Reinforcement Learning, AI Ethics/Safety, model releases and benchmarks, and libraries/frameworks for any of these.
 
 Scoring guide:
-- 8-10: core AI/ML — model releases, research, novel architectures or techniques.
+- 8-10: core AI/ML — model releases, research, novel architectures or techniques, or a library/framework whose purpose is AI/ML.
 - 6-7: a clear real-world application of AI/ML, or AI governance/ethics.
 - 4-5: AI mentioned only in passing or tangentially.
 - 1-3: NOT about AI/ML — general software, infrastructure, hardware, or unrelated topics.
@@ -516,7 +542,12 @@ Your JSON array:"""
                 f.write(f"**Relevance Score:** {article['relevance_score']}/10\n")
                 f.write(f"**Reasoning:** {article['reasoning']}\n")
                 f.write(f"**Key Topics:** {', '.join(article['key_topics'])}\n\n")
-                f.write(f"{article['summary']}\n\n")
+                # HN-style articles often have no body text, so _parse_markdown
+                # falls back to the title as the "summary". Skip writing it then —
+                # otherwise the heading is printed twice and looks like a dupe.
+                summary = article.get("summary", "").strip()
+                if summary and summary != article["title"].strip():
+                    f.write(f"{summary}\n\n")
                 f.write("---\n\n")
 
             # Honest trail: articles we never actually judged (rate limit / error),

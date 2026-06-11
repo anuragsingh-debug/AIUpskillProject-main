@@ -2,11 +2,11 @@
 
 ## Overall Metrics
 
-- **Accuracy:** 90.0%
-- **Precision:** 85.7%
+- **Accuracy:** 100.0%
+- **Precision:** 100.0%
 - **Recall:** 100.0%
-- **F1 Score:** 0.923
-- **Test Cases:** 9/10 correct
+- **F1 Score:** 1.000
+- **Test Cases:** 20/20 correct
 
 ## Test Results
 
@@ -15,8 +15,8 @@
 **Title:** GPT-4 Released by OpenAI
 
 - Expected: Relevant
-- Predicted: Relevant (score: 10)
-- Reasoning: This article is directly about the release of GPT-4, a leading Large Language Model (LLM) from OpenAI. This falls squarely within core AI/ML research and development topics.
+- Predicted: Relevant (score: 8)
+- Reasoning: GPT-4 is a language model and its release falls under the category of AI/ML research and model releases.
 
 ---
 
@@ -25,8 +25,8 @@
 **Title:** New JavaScript Framework Released
 
 - Expected: Not Relevant
-- Predicted: Not Relevant (score: 1)
-- Reasoning: The article discusses a new JavaScript framework (Vue.js 4) focusing on performance and TypeScript support. This is primarily a web development topic and does not directly involve AI/ML concepts like machine learning, neural networks, or natural language processing.
+- Predicted: Not Relevant (score: 3)
+- Reasoning: The article is about a new JavaScript framework (Vue.js 4) with improved performance and better TypeScript support, which does not focus on AI/ML itself.
 
 ---
 
@@ -35,18 +35,18 @@
 **Title:** Machine Learning in Healthcare Breakthrough
 
 - Expected: Relevant
-- Predicted: Relevant (score: 9)
-- Reasoning: The article explicitly mentions 'Machine Learning' and 'deep learning' in the context of a healthcare breakthrough and disease prediction, which are direct AI/ML applications.
+- Predicted: Relevant (score: 8)
+- Reasoning: The article focuses on the use of deep learning for disease outcome prediction with high accuracy.
 
 ---
 
-### [4] ❌ FAIL
+### [4] ✅ PASS
 
 **Title:** Docker 25 Released
 
 - Expected: Not Relevant
-- Predicted: Relevant (score: 7)
-- Reasoning: While Docker itself is a containerization platform and not directly an AI/ML technology, it is a critical tool for deploying, managing, and scaling AI/ML models and applications. Many AI/ML workflows rely heavily on containerization for reproducibility and ease of deployment. Therefore, updates to Docker are highly relevant to the AI/ML ecosystem.
+- Predicted: Not Relevant (score: 3)
+- Reasoning: The article discusses new features for a container platform and does not focus on any AI/ML research, models, techniques, or applications.
 
 ---
 
@@ -55,8 +55,8 @@
 **Title:** Stable Diffusion 3.0 Improves Image Generation
 
 - Expected: Relevant
-- Predicted: Relevant (score: 10)
-- Reasoning: The article is directly about an AI model (Stable Diffusion 3.0) that utilizes deep learning and computer vision to generate images from text, a core AI application.
+- Predicted: Relevant (score: 6)
+- Reasoning: The article discusses improvements in a text-to-image model (Stable Diffusion), which is an application of machine learning.
 
 ---
 
@@ -65,8 +65,8 @@
 **Title:** PostgreSQL 16 Features
 
 - Expected: Not Relevant
-- Predicted: Not Relevant (score: 5)
-- Reasoning: Databases like PostgreSQL are foundational infrastructure for many AI/ML applications. Improvements in data handling, especially JSON, can indirectly benefit AI projects that utilize structured and semi-structured data for training or inference.
+- Predicted: Not Relevant (score: 3)
+- Reasoning: The article discusses PostgreSQL 16 features and improvements without focusing on any aspect of AI or ML.
 
 ---
 
@@ -75,8 +75,8 @@
 **Title:** Neural Network Optimizes Traffic Flow
 
 - Expected: Relevant
-- Predicted: Relevant (score: 9)
-- Reasoning: The article directly mentions the use of a Neural Network and AI to optimize traffic flow, which is a clear application of AI/ML technologies.
+- Predicted: Relevant (score: 6)
+- Reasoning: The article discusses an AI system used for traffic flow optimization, which is a clear real-world application of AI/ML.
 
 ---
 
@@ -86,7 +86,7 @@
 
 - Expected: Not Relevant
 - Predicted: Not Relevant (score: 1)
-- Reasoning: The article discusses a culinary technique for making pizza dough, which is unrelated to AI/ML fields like machine learning, neural networks, or NLP.
+- Reasoning: The article is about a recipe for perfect pizza dough and does not discuss any aspect of AI or machine learning.
 
 ---
 
@@ -95,8 +95,8 @@
 **Title:** Transformer Architecture Explained
 
 - Expected: Relevant
-- Predicted: Relevant (score: 10)
-- Reasoning: The article directly explains the Transformer architecture, which is a fundamental concept in modern NLP and a core component of many large language models (LLMs) and other AI systems. The summary specifically mentions attention mechanisms and self-attention, which are key AI/ML concepts.
+- Predicted: Relevant (score: 6)
+- Reasoning: The article discusses Transformer Architecture and attention mechanisms in the context of modern NLP models, which are core AI/ML topics.
 
 ---
 
@@ -105,8 +105,108 @@
 **Title:** AI Ethics Guidelines Published
 
 - Expected: Relevant
+- Predicted: Relevant (score: 6)
+- Reasoning: The article discusses the release of guidelines for responsible AI development, which falls under AI ethics and governance.
+
+---
+
+### [11] ✅ PASS
+
+**Title:** Meta Releases Llama 4 Open-Weight Model
+
+- Expected: Relevant
+- Predicted: Relevant (score: 6)
+- Reasoning: Meta's release of Llama 4 is a clear real-world application of large language models, which falls under the category of AI/ML.
+
+---
+
+### [12] ✅ PASS
+
+**Title:** Reinforcement Learning Agent Masters Robotic Assembly
+
+- Expected: Relevant
 - Predicted: Relevant (score: 8)
-- Reasoning: The article directly addresses AI Ethics, which is a critical and inseparable aspect of AI/ML development and deployment.
+- Reasoning: The article discusses a deep reinforcement learning system that learns to assemble electronics with near-human-level dexterity, which is a clear application of AI/ML.
+
+---
+
+### [13] ✅ PASS
+
+**Title:** Diffusion Models Generate Synthetic Training Data
+
+- Expected: Relevant
+- Predicted: Relevant (score: 6)
+- Reasoning: The article discusses the use of generative diffusion models in creating synthetic datasets that improve classifier accuracy, which is a direct application of machine learning.
+
+---
+
+### [14] ✅ PASS
+
+**Title:** New Benchmark Tests LLM Mathematical Reasoning
+
+- Expected: Relevant
+- Predicted: Relevant (score: 8)
+- Reasoning: The article discusses a benchmark suite for measuring reasoning ability and hallucination rates in large language models, which is directly related to AI/ML.
+
+---
+
+### [15] ✅ PASS
+
+**Title:** AI System Detects Tumors in Radiology Scans
+
+- Expected: Relevant
+- Predicted: Relevant (score: 7)
+- Reasoning: The article discusses an AI system (convolutional neural network) that detects tumors in radiology scans, which is a clear application of machine learning.
+
+---
+
+### [16] ✅ PASS
+
+**Title:** Kubernetes 1.30 Released
+
+- Expected: Not Relevant
+- Predicted: Not Relevant (score: 3)
+- Reasoning: The article discusses improvements in Kubernetes for cloud-native workloads without focusing on any AI/ML aspects.
+
+---
+
+### [17] ✅ PASS
+
+**Title:** NVIDIA Announces RTX 5090 Gaming GPU
+
+- Expected: Not Relevant
+- Predicted: Not Relevant (score: 3)
+- Reasoning: The article is about a new graphics card for gaming with improved ray tracing and higher frame rates. While it mentions NVIDIA, which often works on AI/ML-related products, the main subject of the article is not AI/ML itself.
+
+---
+
+### [18] ✅ PASS
+
+**Title:** AWS Cuts S3 Cloud Storage Prices
+
+- Expected: Not Relevant
+- Predicted: Not Relevant (score: 3)
+- Reasoning: The article discusses AWS S3 cloud storage pricing changes and lifecycle management options. While AWS is a common platform for machine learning, the main focus of the article is on cloud infrastructure rather than AI/ML.
+
+---
+
+### [19] ✅ PASS
+
+**Title:** Rust 1.85 Programming Language Released
+
+- Expected: Not Relevant
+- Predicted: Not Relevant (score: 3)
+- Reasoning: The article discusses improvements and a faster compiler for the Rust programming language, which is not directly related to AI/ML.
+
+---
+
+### [20] ✅ PASS
+
+**Title:** Apache Kafka Adds Tiered Storage
+
+- Expected: Not Relevant
+- Predicted: Not Relevant (score: 3)
+- Reasoning: The article discusses the introduction of tiered storage by Apache Kafka, which is related to data management and not directly about AI/ML.
 
 ---
 

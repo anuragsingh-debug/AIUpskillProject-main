@@ -3,6 +3,11 @@
 import asyncio
 from pathlib import Path
 from src.orchestrator import FetchOrchestrator
+from src.transformers.article_transformer import ArticleTransformer
+from src.storage.markdown_storage import MarkdownStorage
+from src.fetchers.hackernews_fetcher import HackerNewsFetcher
+from src.fetchers.rss_fetcher import RSSFetcher
+from src.fetchers.github_trending_fetcher import GitHubTrendingFetcher
 from src.agents.news_filter_agent import NewsFilterAgent
 from src.agents.summarizer_agent import SummarizerAgent
 from src.agents.writer_agent import WriterAgent
@@ -24,7 +29,21 @@ async def run_complete_pipeline():
 
     # Step 1: Fetch
     print("\n📰 Step 1: Fetching articles from sources...")
-    orchestrator = FetchOrchestrator()
+    # Composition root: build the concrete dependencies HERE, then inject them
+    # (Dependency Inversion). The orchestrator stays decoupled from concrete
+    # fetchers/storage — same wiring as src/main.py.
+    transformer = ArticleTransformer()
+    storage = MarkdownStorage()
+    fetchers = [
+        HackerNewsFetcher(transformer, storage),
+        RSSFetcher("https://hnrss.org/frontpage", transformer, storage),
+        GitHubTrendingFetcher(transformer, storage),
+    ]
+    orchestrator = FetchOrchestrator(
+        fetchers=fetchers,
+        transformer=transformer,
+        storage=storage,
+    )
     articles = await orchestrator.fetch_all()
     fetch_output = Path("data/articles/all_articles.md")
     print(f"✅ Fetched {len(articles)} articles → {fetch_output}")
@@ -33,6 +52,12 @@ async def run_complete_pipeline():
     print("\n💾 Step 2: Saving to database...")
     db = DatabaseManager()
     await db.initialize()
+    # The articles table de-dups on a UNIQUE url, and the DB file PERSISTS across
+    # runs — so the total row count is cumulative, not this run's count. Measure
+    # before/after so we can report what THIS run actually added vs. what was
+    # already stored (otherwise "Database has 47" after fetching 66 looks like 19
+    # articles silently vanished, when they were really cross-run duplicates).
+    count_before = len(await db.query_articles(limit=100000))
     for article in articles:
         await db.insert_article(
             {
@@ -44,8 +69,13 @@ async def run_complete_pipeline():
                 "score": getattr(article, "score", 0),
             }
         )
-    db_articles = await db.query_articles(limit=1000)
-    print(f"✅ Database has {len(db_articles)} articles")
+    db_articles = await db.query_articles(limit=100000)
+    inserted = len(db_articles) - count_before
+    duplicates = len(articles) - inserted
+    print(
+        f"✅ Inserted {inserted} new article(s) this run "
+        f"({duplicates} already in DB); database now holds {len(db_articles)} unique total"
+    )
 
     # Step 3: Filter
     print("\n🤖 Step 3: Filtering with AI agent...")

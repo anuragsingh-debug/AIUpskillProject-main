@@ -263,15 +263,25 @@ class FilterEvaluator:
 
 
 # ====================== The "press play" entry point ======================
-async def run_evaluation():
-    """Run evaluation and save report."""
+async def run_evaluation(
+    dataset_path: str = "data/evaluation/golden_dataset.json",
+    report_path: str = "data/evaluation/evaluation_report.md",
+):
+    """Run evaluation and save report.
+
+    Args default to the curated golden set, but either can be overridden so the
+    SAME grader can score a different answer key (e.g. the harder real-world set
+    built from actually-fetched articles) and write a separate report — without
+    touching the curated baseline.
+    """
     # Pretty header so the console output is easy to read.
     print("=" * 60)
     print("  News Filter Agent Evaluation")
+    print(f"  Dataset: {dataset_path}")
     print("=" * 60)
 
     # 1) Create the grader, pointing it at the answer key.
-    evaluator = FilterEvaluator("data/evaluation/golden_dataset.json")
+    evaluator = FilterEvaluator(dataset_path)
     # 2) Run the whole grade-every-question loop (this is where LLM calls happen).
     evaluation = await evaluator.evaluate()
 
@@ -283,13 +293,19 @@ async def run_evaluation():
     print(f"   F1 Score:  {evaluation['metrics']['f1_score']:.3f}")
 
     # 4) Also save the full report card to a file for sharing / the project report.
-    await evaluator.save_report(evaluation, "data/evaluation/evaluation_report.md")
+    await evaluator.save_report(evaluation, report_path)
 
     print("\n✅ Evaluation complete!")
-    print("   Report: data/evaluation/evaluation_report.md")
+    print(f"   Report: {report_path}")
 
 
 # Only run when this file is launched directly (python -m src.evaluation.evaluator),
 # NOT when it's imported by another module. asyncio.run(...) starts the async engine.
+# Optional CLI args let you point at a different dataset + report:
+#   python -m src.evaluation.evaluator <dataset.json> <report.md>
 if __name__ == "__main__":
-    asyncio.run(run_evaluation())
+    import sys
+
+    dataset = sys.argv[1] if len(sys.argv) > 1 else "data/evaluation/golden_dataset.json"
+    report = sys.argv[2] if len(sys.argv) > 2 else "data/evaluation/evaluation_report.md"
+    asyncio.run(run_evaluation(dataset, report))

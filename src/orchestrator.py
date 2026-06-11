@@ -48,6 +48,16 @@ class FetchOrchestrator:
                 print(f"   {name}: {len(result)} articles")
                 all_articles.extend(result)
 
+        # De-duplicate across sources. The HackerNews API fetcher and the
+        # hnrss.org/frontpage RSS feed surface the SAME stories, so the combined
+        # list routinely holds duplicates (we saw the same HN title judged twice
+        # by the filter). Drop them by URL — the article's stable identity —
+        # falling back to a normalized title when a URL is missing. We keep the
+        # FIRST occurrence so source order is preserved. Doing this here, once,
+        # means every downstream stage (storage, DB, filter, summarize) sees each
+        # story exactly once instead of each re-implementing its own de-dup.
+        all_articles = self._deduplicate(all_articles)
+
         # Save combined results
         if all_articles:
             self.storage.save(all_articles, "all_articles.md")
@@ -56,6 +66,27 @@ class FetchOrchestrator:
             f"\nTotal: {len(all_articles)} articles from {len(self.fetchers)} sources"
         )
         return all_articles
+
+    def _deduplicate(self, articles: List[Article]) -> List[Article]:
+        """Drop duplicate articles, keeping the first occurrence of each.
+
+        Identity is the URL (lower-cased/stripped); when an article has no URL
+        we fall back to its normalized title so a source that omits URLs still
+        de-dups. Returns a new list in the original order, minus the repeats.
+        """
+        seen: set[str] = set()
+        unique: List[Article] = []
+        for article in articles:
+            key = (article.url or article.title or "").strip().lower()
+            if key and key in seen:
+                continue
+            seen.add(key)
+            unique.append(article)
+
+        removed = len(articles) - len(unique)
+        if removed:
+            print(f"   De-duplicated: removed {removed} repeat(s) across sources")
+        return unique
 
 
 # Manual run: python -m src.orchestrator

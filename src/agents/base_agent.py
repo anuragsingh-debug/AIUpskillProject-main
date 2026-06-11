@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import time
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
 
@@ -13,6 +14,18 @@ from litellm import completion
 # terminals default to cp1252 which can't encode them. Force UTF-8 once here so
 # every agent that prints is safe.
 sys.stdout.reconfigure(encoding="utf-8")
+
+# litellm 1.55 + a local Ollama model emit a noisy Pydantic UserWarning on EVERY
+# call ("Pydantic serializer warnings: ... Expected 5 fields but got 4"): Ollama's
+# response Message simply has fewer fields than litellm's model declares. It is
+# purely cosmetic — the returned `.content` is unaffected — but it prints multiple
+# times per pipeline run and buries the real output. Silence just that one warning;
+# all other warnings still surface.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Pydantic serializer warnings",
+    category=UserWarning,
+)
 
 
 class DailyQuotaExceeded(Exception):
