@@ -230,3 +230,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Personal reference / report material — kept locally, NOT pushed
+notes.md
+report/
+docs/diagrams/
+scripts/make_diagrams.py
+scripts/make_roadmap.py
+scripts/make_tree.py
