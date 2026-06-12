@@ -298,14 +298,86 @@ async def run_evaluation(
     print("\n✅ Evaluation complete!")
     print(f"   Report: {report_path}")
 
+    # Hand the numbers back so a SUITE run can aggregate several datasets into one
+    # combined summary (returns None-free dict; harmless for single-dataset callers).
+    return evaluation
+
+
+# The evaluation SUITE: every answer key we grade against, easiest first.
+# The curated set is a textbook sanity check (clean, obvious headlines) — it is
+# EXPECTED to hit ~100% and on its own proves almost nothing. The real-world set
+# is messy live titles and is the number that actually reflects production
+# quality. We always run BOTH so the flattering 100% never gets reported alone.
+EVAL_SUITE = [
+    {
+        "name": "Curated (sanity check)",
+        "dataset": "data/evaluation/golden_dataset.json",
+        "report": "data/evaluation/evaluation_report.md",
+        "trust": "low",   # easy/obvious cases — a floor, not the headline number
+    },
+    {
+        "name": "Real-world (production signal)",
+        "dataset": "data/evaluation/realworld_dataset.json",
+        "report": "data/evaluation/evaluation_report_realworld.md",
+        "trust": "high",  # messy live articles — THIS is the believable number
+    },
+]
+
+
+async def run_suite(suite: List[Dict] = None):
+    """Run the WHOLE evaluation suite and print one honest combined summary.
+
+    Running only the curated set prints a lone "100%" that reads as naïve — no
+    real classifier is perfect. So we grade every answer key in the suite and
+    show them side by side, clearly labelling which number to actually trust.
+    """
+    suite = suite or EVAL_SUITE
+    summary = []  # one row per dataset for the final leaderboard
+
+    for entry in suite:
+        # A missing dataset shouldn't kill the whole suite — skip it with a note.
+        if not Path(entry["dataset"]).exists():
+            print(f"\n⚠️  Skipping '{entry['name']}': {entry['dataset']} not found.")
+            continue
+        evaluation = await run_evaluation(entry["dataset"], entry["report"])
+        summary.append({**entry, "metrics": evaluation["metrics"],
+                        "complete": evaluation.get("complete", True)})
+
+    # --- Combined leaderboard: every dataset's headline numbers in one place. ---
+    print("\n" + "=" * 60)
+    print("  COMBINED EVALUATION SUMMARY")
+    print("=" * 60)
+    for row in summary:
+        m = row["metrics"]
+        tag = "⭐ TRUST THIS" if row["trust"] == "high" else "🧪 sanity only"
+        partial = "" if row["complete"] else "  (PARTIAL — quota hit)"
+        print(f"\n  {row['name']}  [{tag}]{partial}")
+        print(f"     Accuracy {m['accuracy']:.1%}   "
+              f"Precision {m['precision']:.1%}   "
+              f"Recall {m['recall']:.1%}   "
+              f"F1 {m['f1_score']:.3f}   "
+              f"({m['correct']}/{m['total']})")
+
+    # A plain-language reminder so nobody quotes the curated 100% as THE result.
+    print("\n  ℹ️  The curated set is a textbook sanity check and is expected to")
+    print("     near 100%. Report the REAL-WORLD number as the project's accuracy.")
+    print("=" * 60)
+    return summary
+
 
 # Only run when this file is launched directly (python -m src.evaluation.evaluator),
 # NOT when it's imported by another module. asyncio.run(...) starts the async engine.
-# Optional CLI args let you point at a different dataset + report:
-#   python -m src.evaluation.evaluator <dataset.json> <report.md>
+#   python -m src.evaluation.evaluator                     -> runs the FULL suite
+#   python -m src.evaluation.evaluator <dataset> <report>  -> one specific answer key
 if __name__ == "__main__":
     import sys
 
-    dataset = sys.argv[1] if len(sys.argv) > 1 else "data/evaluation/golden_dataset.json"
-    report = sys.argv[2] if len(sys.argv) > 2 else "data/evaluation/evaluation_report.md"
-    asyncio.run(run_evaluation(dataset, report))
+    if len(sys.argv) > 1:
+        # Explicit dataset given: grade just that one (backward-compatible path).
+        dataset = sys.argv[1]
+        report = sys.argv[2] if len(sys.argv) > 2 else "data/evaluation/evaluation_report.md"
+        asyncio.run(run_evaluation(dataset, report))
+    else:
+        # No args: run the whole suite so a lone, misleading 100% can't be the
+        # only thing shown — the real-world number is always reported alongside.
+        asyncio.run(run_suite())

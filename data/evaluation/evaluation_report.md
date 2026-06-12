@@ -66,7 +66,7 @@
 
 - Expected: Not Relevant
 - Predicted: Not Relevant (score: 3)
-- Reasoning: The article discusses PostgreSQL 16 features and improvements without focusing on any aspect of AI or ML.
+- Reasoning: The article discusses PostgreSQL features and improvements without focusing on any aspect of AI/ML.
 
 ---
 
@@ -86,7 +86,7 @@
 
 - Expected: Not Relevant
 - Predicted: Not Relevant (score: 1)
-- Reasoning: The article is about a recipe for perfect pizza dough and does not discuss any aspect of AI or machine learning.
+- Reasoning: The article is about a recipe for perfect pizza dough and does not mention any AI or ML.
 
 ---
 
@@ -156,7 +156,7 @@
 
 - Expected: Relevant
 - Predicted: Relevant (score: 7)
-- Reasoning: The article discusses an AI system (convolutional neural network) that detects tumors in radiology scans, which is a clear application of machine learning.
+- Reasoning: The article discusses a convolutional neural network used in detecting tumors, which is a clear application of machine learning.
 
 ---
 
@@ -166,7 +166,7 @@
 
 - Expected: Not Relevant
 - Predicted: Not Relevant (score: 3)
-- Reasoning: The article discusses improvements in Kubernetes for cloud-native workloads without focusing on any AI/ML aspects.
+- Reasoning: The article discusses improvements in Kubernetes for cloud-native workloads without focusing on any AI/ML-related aspects.
 
 ---
 
@@ -176,7 +176,7 @@
 
 - Expected: Not Relevant
 - Predicted: Not Relevant (score: 3)
-- Reasoning: The article is about a new graphics card for gaming with improved ray tracing and higher frame rates. While it mentions NVIDIA, which often works on AI/ML-related products, the main subject of the article is not AI/ML itself.
+- Reasoning: The article is about a new graphics card with improved ray tracing and higher frame rates for gamers, which does not directly relate to AI/ML.
 
 ---
 
@@ -206,7 +206,7 @@
 
 - Expected: Not Relevant
 - Predicted: Not Relevant (score: 3)
-- Reasoning: The article discusses the introduction of tiered storage by Apache Kafka, which is related to data management and not directly about AI/ML.
+- Reasoning: The article discusses the introduction of tiered storage by Apache Kafka for cost reduction in data pipelines, which is not directly related to AI/ML.
 
 ---
 
